@@ -35,10 +35,13 @@ type ItemEvent struct {
 }
 
 type Proxy struct {
-	ID          int32     `json:"id"`
-	ProxyListID int32     `json:"proxy_list_id"`
-	Url         string    `json:"url"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          int32          `json:"id"`
+	ProxyListID int32          `json:"proxy_list_id"`
+	Host        string         `json:"host"`
+	Port        string         `json:"port"`
+	Username    sql.NullString `json:"username"`
+	Password    sql.NullString `json:"password"`
+	CreatedAt   time.Time      `json:"created_at"`
 }
 
 type ProxyList struct {
@@ -70,9 +73,9 @@ type TaskRun struct {
 }
 
 type Webhook struct {
-	ID          int32     `json:"id"`
-	Name        string    `json:"name"`
-	Url         string    `json:"url"`
-	WebhookType string    `json:"webhook_type"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID        int32     `json:"id"`
+	Name      string    `json:"name"`
+	Url       string    `json:"url"`
+	Type      string    `json:"type"`
+	CreatedAt time.Time `json:"created_at"`
 }

@@ -15,3 +15,6 @@ createdb ${POSTGRES_TEST_DB_NAME}
 
 echo -e "Running migrations"
 make migrate-up
+
+echo -e "Seeding data"
+make seed

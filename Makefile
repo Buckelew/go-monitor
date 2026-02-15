@@ -17,6 +17,10 @@ migrate-up:
 	migrate -path migrations -database '$(POSTGRES_URL)?sslmode=disable' up
 .PHONY: migrate-up
 
+seed:
+	psql $$POSTGRES_URL -f scripts/seed.sql
+.PHONY: seed
+
 bin-deps:
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 .PHONY: bin-deps

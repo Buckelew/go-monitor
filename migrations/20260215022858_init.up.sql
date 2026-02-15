@@ -2,7 +2,7 @@ CREATE TABLE webhooks (
   id SERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   url TEXT NOT NULL UNIQUE,
-  webhook_type VARCHAR(20) NOT NULL,
+  type VARCHAR(20) NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -15,9 +15,11 @@ CREATE TABLE proxy_lists (
 CREATE TABLE proxies (
   id SERIAL PRIMARY KEY,
   proxy_list_id INT NOT NULL REFERENCES proxy_lists(id) ON DELETE CASCADE,
-  url TEXT NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  UNIQUE(proxy_list_id, url)
+  host TEXT NOT NULL,
+  port TEXT NOT NULL,
+  username TEXT,
+  password TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_proxies_proxy_list_id ON proxies(proxy_list_id);
