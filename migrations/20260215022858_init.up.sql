@@ -35,7 +35,7 @@ CREATE TABLE tasks (
   platform VARCHAR(50) NOT NULL,
   task_type VARCHAR(20) NOT NULL,
   url TEXT NOT NULL,
-  webhook_id INT REFERENCES webhooks(id),
+  webhook_id INT NOT NULL REFERENCES webhooks(id),
   proxy_list_id INT REFERENCES proxy_lists(id),
   delay INT NOT NULL,
   enabled BOOLEAN NOT NULL DEFAULT true,

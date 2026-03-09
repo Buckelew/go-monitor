@@ -1,8 +1,8 @@
-package task
+package monitor
 
 import (
 	"context"
-	"time"
+	"encoding/json"
 )
 
 type Platform string
@@ -21,17 +21,42 @@ const (
 	Search  TaskType = "search"
 )
 
+type Item struct {
+	URL      string
+	Title    string
+	InStock  bool
+	ImageURL string
+	Data     json.RawMessage
+}
+
+type EventType string
+
+const (
+	EventNewProduct EventType = "new_product"
+	EventRestock    EventType = "restock"
+	EventDelisted   EventType = "delisted"
+)
+
+type ItemEvent struct {
+	Type EventType
+	Item Item
+}
+
 type TaskResult struct {
-	Success     bool
-	NewProducts []Product
-	Error       error
+	Success bool
+	Events  []ItemEvent
+}
+
+type Notifier interface {
+	Notify(channelID string, event ItemEvent) error
 }
 
 type Task interface {
-	ID() string
+	ID() int32
 	Platform() Platform
 	Type() TaskType
 	Run(ctx context.Context) (*TaskResult, error)
-	Delay() time.Duration
+	Delay() int32
 	IsEnabled() bool
+	ChannelID() string
 }

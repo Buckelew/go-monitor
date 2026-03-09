@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/buckelew/go-monitor/config"
+	_ "github.com/lib/pq"
 )
 
 func Connect(cfg config.Database) (*Queries, *sql.DB, error) {

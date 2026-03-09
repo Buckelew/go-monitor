@@ -23,6 +23,7 @@ type Item struct {
 	Platform  string          `json:"platform"`
 	CreatedAt time.Time       `json:"created_at"`
 	Data      json.RawMessage `json:"data"`
+	Delisted  bool            `json:"delisted"`
 }
 
 type ItemEvent struct {
@@ -55,12 +56,12 @@ type Task struct {
 	Platform    string        `json:"platform"`
 	TaskType    string        `json:"task_type"`
 	Url         string        `json:"url"`
-	WebhookID   sql.NullInt32 `json:"webhook_id"`
 	ProxyListID sql.NullInt32 `json:"proxy_list_id"`
 	Delay       int32         `json:"delay"`
 	Enabled     bool          `json:"enabled"`
 	CreatedAt   time.Time     `json:"created_at"`
 	UpdatedAt   time.Time     `json:"updated_at"`
+	ChannelID   string        `json:"channel_id"`
 }
 
 type TaskRun struct {
@@ -70,12 +71,4 @@ type TaskRun struct {
 	CompletedAt  sql.NullTime   `json:"completed_at"`
 	Status       string         `json:"status"`
 	ErrorMessage sql.NullString `json:"error_message"`
-}
-
-type Webhook struct {
-	ID        int32     `json:"id"`
-	Name      string    `json:"name"`
-	Url       string    `json:"url"`
-	Type      string    `json:"type"`
-	CreatedAt time.Time `json:"created_at"`
 }

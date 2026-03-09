@@ -1,0 +1,11 @@
+CREATE TABLE webhooks (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  url TEXT NOT NULL UNIQUE,
+  type VARCHAR(20) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE tasks DROP COLUMN channel_id;
+ALTER TABLE tasks ADD COLUMN webhook_id INT NOT NULL DEFAULT 0;
+ALTER TABLE tasks ADD CONSTRAINT tasks_webhook_id_fkey FOREIGN KEY (webhook_id) REFERENCES webhooks(id);

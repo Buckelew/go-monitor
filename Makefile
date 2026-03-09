@@ -14,7 +14,7 @@ migrate-create:
 .PHONY: migrate-create
 
 migrate-up:
-	migrate -path migrations -database '$(POSTGRES_URL)?sslmode=disable' up
+	migrate -path migrations -database '$(POSTGRES_URL)' up
 .PHONY: migrate-up
 
 seed:
