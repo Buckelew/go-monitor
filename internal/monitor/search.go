@@ -50,6 +50,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 				Url:      item.URL,
 				Platform: string(s.Platform()),
 				Data:     item.Data,
+				InStock:  item.InStock,
 			})
 			if err != nil {
 				log.Printf("[task %d] failed to insert item %s: %v", s.id, item.URL, err)
@@ -78,8 +79,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 		}
 
 		// Check for restock (OOS → IS)
-		oldItem := itemFromData(existing.Data)
-		if !existing.Delisted && !oldItem.InStock && item.InStock {
+		if !existing.Delisted && !existing.InStock && item.InStock {
 			events = append(events, ItemEvent{Type: EventRestock, Item: item})
 			s.insertEvent(ctx, existing.ID, existing.Data, item.Data)
 		}
@@ -91,6 +91,16 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 				Data: item.Data,
 			}); err != nil {
 				log.Printf("[task %d] failed to update item data for %s: %v", s.id, item.URL, err)
+			}
+		}
+
+		// Update in_stock if changed
+		if existing.InStock != item.InStock {
+			if err := s.queries.UpdateItemInStock(ctx, database.UpdateItemInStockParams{
+				ID:      existing.ID,
+				InStock: item.InStock,
+			}); err != nil {
+				log.Printf("[task %d] failed to update in_stock for %s: %v", s.id, item.URL, err)
 			}
 		}
 	}
@@ -121,27 +131,6 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 	}
 
 	return &TaskResult{Success: true, Events: events}, nil
-}
-
-// itemFromData extracts InStock from stored JSONB data (Shopify product format).
-func itemFromData(data json.RawMessage) Item {
-	var product struct {
-		Variants []struct {
-			Available bool `json:"available"`
-		} `json:"variants"`
-	}
-	if err := json.Unmarshal(data, &product); err != nil {
-		return Item{}
-	}
-
-	inStock := false
-	for _, v := range product.Variants {
-		if v.Available {
-			inStock = true
-			break
-		}
-	}
-	return Item{InStock: inStock}
 }
 
 func (s *SearchTask) insertEvent(ctx context.Context, itemID int32, prevState, newState json.RawMessage) {

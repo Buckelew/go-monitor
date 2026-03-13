@@ -13,7 +13,10 @@ import (
 	"github.com/buckelew/go-monitor/internal/discord"
 	"github.com/buckelew/go-monitor/internal/httpclient"
 	"github.com/buckelew/go-monitor/internal/monitor"
+	"github.com/buckelew/go-monitor/internal/monitor/platforms/bigcartel"
+	"github.com/buckelew/go-monitor/internal/monitor/platforms/reddit"
 	"github.com/buckelew/go-monitor/internal/monitor/platforms/shopify"
+	"github.com/buckelew/go-monitor/internal/monitor/platforms/squarespace"
 )
 
 func Run(cfg *config.Config) {
@@ -91,6 +94,21 @@ func Run(cfg *config.Config) {
 			switch dbTask.TaskType {
 			case string(monitor.Search):
 				scraper = shopify.NewSearchShopify(dbTask.Url, client)
+			}
+		case string(monitor.Bigcartel):
+			switch dbTask.TaskType {
+			case string(monitor.Search):
+				scraper = bigcartel.NewSearchBigCartel(dbTask.Url, client)
+			}
+		case string(monitor.Squarespace):
+			switch dbTask.TaskType {
+			case string(monitor.Search):
+				scraper = squarespace.NewSearchSquarespace(dbTask.Url, client)
+			}
+		case string(monitor.Reddit):
+			switch dbTask.TaskType {
+			case string(monitor.Search):
+				scraper = reddit.NewSearchReddit(dbTask.Url, client)
 			}
 		}
 
