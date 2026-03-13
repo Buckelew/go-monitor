@@ -24,6 +24,7 @@ type Item struct {
 	CreatedAt time.Time       `json:"created_at"`
 	Data      json.RawMessage `json:"data"`
 	Delisted  bool            `json:"delisted"`
+	InStock   bool            `json:"in_stock"`
 }
 
 type ItemEvent struct {

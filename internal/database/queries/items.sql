@@ -22,6 +22,11 @@ UPDATE items
 SET delisted = false
 WHERE id = $1;
 
+-- name: UpdateItemInStock :exec
+UPDATE items
+SET in_stock = $2
+WHERE id = $1;
+
 -- name: InsertItemEvent :one
 INSERT INTO item_events (item_id, previous_state, new_state)
 VALUES ($1, $2, $3)

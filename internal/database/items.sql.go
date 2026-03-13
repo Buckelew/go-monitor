@@ -11,7 +11,7 @@ import (
 )
 
 const getActiveItemsByTask = `-- name: GetActiveItemsByTask :many
-SELECT id, task_id, url, platform, created_at, data, delisted FROM items
+SELECT id, task_id, url, platform, created_at, data, delisted, in_stock FROM items
 WHERE task_id = $1 AND delisted = false
 `
 
@@ -32,6 +32,7 @@ func (q *Queries) GetActiveItemsByTask(ctx context.Context, taskID int32) ([]Ite
 			&i.CreatedAt,
 			&i.Data,
 			&i.Delisted,
+			&i.InStock,
 		); err != nil {
 			return nil, err
 		}
@@ -47,7 +48,7 @@ func (q *Queries) GetActiveItemsByTask(ctx context.Context, taskID int32) ([]Ite
 }
 
 const getItemByTaskAndURL = `-- name: GetItemByTaskAndURL :one
-SELECT id, task_id, url, platform, created_at, data, delisted FROM items
+SELECT id, task_id, url, platform, created_at, data, delisted, in_stock FROM items
 WHERE task_id = $1 AND url = $2
 LIMIT 1
 `
@@ -68,6 +69,7 @@ func (q *Queries) GetItemByTaskAndURL(ctx context.Context, arg GetItemByTaskAndU
 		&i.CreatedAt,
 		&i.Data,
 		&i.Delisted,
+		&i.InStock,
 	)
 	return i, err
 }
@@ -133,5 +135,21 @@ type UpdateItemDataParams struct {
 
 func (q *Queries) UpdateItemData(ctx context.Context, arg UpdateItemDataParams) error {
 	_, err := q.db.ExecContext(ctx, updateItemData, arg.ID, arg.Data)
+	return err
+}
+
+const updateItemInStock = `-- name: UpdateItemInStock :exec
+UPDATE items
+SET in_stock = $2
+WHERE id = $1
+`
+
+type UpdateItemInStockParams struct {
+	ID      int32 `json:"id"`
+	InStock bool  `json:"in_stock"`
+}
+
+func (q *Queries) UpdateItemInStock(ctx context.Context, arg UpdateItemInStockParams) error {
+	_, err := q.db.ExecContext(ctx, updateItemInStock, arg.ID, arg.InStock)
 	return err
 }

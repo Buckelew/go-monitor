@@ -11,10 +11,10 @@ import (
 )
 
 const upsertItem = `-- name: UpsertItem :one
-INSERT INTO items (task_id, url, platform, data)
-VALUES ($1, $2, $3, $4)
+INSERT INTO items (task_id, url, platform, data, in_stock)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (task_id, url) DO NOTHING
-RETURNING id, task_id, url, platform, created_at, data, delisted
+RETURNING id, task_id, url, platform, created_at, data, delisted, in_stock
 `
 
 type UpsertItemParams struct {
@@ -22,6 +22,7 @@ type UpsertItemParams struct {
 	Url      string          `json:"url"`
 	Platform string          `json:"platform"`
 	Data     json.RawMessage `json:"data"`
+	InStock  bool            `json:"in_stock"`
 }
 
 func (q *Queries) UpsertItem(ctx context.Context, arg UpsertItemParams) (Item, error) {
@@ -30,6 +31,7 @@ func (q *Queries) UpsertItem(ctx context.Context, arg UpsertItemParams) (Item, e
 		arg.Url,
 		arg.Platform,
 		arg.Data,
+		arg.InStock,
 	)
 	var i Item
 	err := row.Scan(
@@ -40,6 +42,7 @@ func (q *Queries) UpsertItem(ctx context.Context, arg UpsertItemParams) (Item, e
 		&i.CreatedAt,
 		&i.Data,
 		&i.Delisted,
+		&i.InStock,
 	)
 	return i, err
 }
