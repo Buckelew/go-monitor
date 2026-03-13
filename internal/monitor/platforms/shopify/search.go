@@ -14,6 +14,7 @@ import (
 
 type SearchShopify struct {
 	URL        string
+	baseURL    string
 	client     *httpclient.Client
 	requestNum atomic.Uint64
 }
@@ -24,7 +25,7 @@ func (s *SearchShopify) Platform() monitor.Platform {
 
 func (s *SearchShopify) FetchProducts(ctx context.Context) ([]monitor.Item, error) {
 	reqNum := s.requestNum.Add(1) - 1
-	url := productsURL(s.URL, reqNum)
+	url := productsURL(s.baseURL, reqNum)
 
 	if err := s.client.RotateProxy(); err != nil {
 		return nil, fmt.Errorf("failed to rotate proxy: %w", err)
@@ -58,6 +59,10 @@ func (s *SearchShopify) FetchProducts(ctx context.Context) ([]monitor.Item, erro
 	return items, nil
 }
 
-func NewSearchShopify(URL string, client *httpclient.Client) *SearchShopify {
-	return &SearchShopify{URL: URL, client: client}
+func NewSearchShopify(URL string, client *httpclient.Client, opts ...*monitor.Opts) *SearchShopify {
+	baseURL := URL
+	if len(opts) > 0 && opts[0] != nil && opts[0].BaseURL != "" {
+		baseURL = opts[0].BaseURL
+	}
+	return &SearchShopify{URL: URL, baseURL: baseURL, client: client}
 }

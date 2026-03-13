@@ -5,6 +5,10 @@ run:
 	go run cmd/monitor/main.go
 .PHONY: run
 
+test:
+	POSTGRES_TEST_URL=$(POSTGRES_URL) go test ./... -v -count=1
+.PHONY: test
+
 refresh:
 	./scripts/refresh.sh
 .PHONY: refresh

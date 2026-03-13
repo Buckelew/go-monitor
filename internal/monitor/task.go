@@ -21,6 +21,11 @@ const (
 	Search  TaskType = "search"
 )
 
+// Opts allows overriding scraper behavior (e.g. base URL for tests).
+type Opts struct {
+	BaseURL string // override base URL for HTTP requests
+}
+
 type Item struct {
 	URL      string
 	Title    string
