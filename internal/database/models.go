@@ -19,6 +19,7 @@ type DiscordUser struct {
 	AccessToken    string       `json:"access_token"`
 	RefreshToken   string       `json:"refresh_token"`
 	TokenExpiresAt sql.NullTime `json:"token_expires_at"`
+	Role           string       `json:"role"`
 }
 
 type Item struct {

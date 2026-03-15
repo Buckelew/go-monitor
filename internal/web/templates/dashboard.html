@@ -1,0 +1,64 @@
+{{define "content"}}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Your subscriptions</p>
+    </div>
+    {{if .Servers}}
+    <div class="server-picker">
+        <select class="form-input" onchange="window.location.href='/dashboard?server='+this.value">
+            {{range .Servers}}
+            <option value="{{.GuildID}}" {{if $.SelectedServer}}{{if eq .GuildID $.SelectedServer.GuildID}}selected{{end}}{{end}}>
+                {{if .GuildName}}{{.GuildName}}{{else}}{{.GuildID}}{{end}}
+            </option>
+            {{end}}
+        </select>
+    </div>
+    {{end}}
+</div>
+
+{{if not .Servers}}
+<div class="empty-state">
+    <p class="empty-title">No servers registered</p>
+    <p class="empty-subtitle">Register a Discord server via the API to start creating subscriptions.</p>
+</div>
+{{else if not .Subscriptions}}
+<div class="empty-state">
+    <p class="empty-title">No subscriptions</p>
+    <p class="empty-subtitle">This server has no active subscriptions yet.</p>
+</div>
+{{else}}
+<div class="table-wrapper">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Channel</th>
+                <th>Mode</th>
+                <th>Task</th>
+                <th>Item</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Subscriptions}}
+            <tr>
+                <td><code>{{.ChannelID}}</code></td>
+                <td>
+                    <span class="mode-badge mode-{{.Mode}}">{{.Mode}}</span>
+                </td>
+                <td>{{.TaskID}}</td>
+                <td>
+                    {{if .ItemID.Valid}}
+                        {{.ItemID.Int32}}
+                    {{else}}
+                        <span class="cell-muted">-</span>
+                    {{end}}
+                </td>
+                <td class="cell-muted">{{.CreatedAt.Format "Jan 02, 2006"}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+{{end}}

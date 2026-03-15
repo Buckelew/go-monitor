@@ -39,7 +39,7 @@ func Run(cfg *config.Config) {
 	defer db.Close()
 
 	// Web dashboard
-	webServer := web.NewServer(queries, db)
+	webServer := web.NewServer(queries, db, cfg.API.SessionSecret)
 	go func() {
 		addr := fmt.Sprintf(":%d", cfg.Web.Port)
 		log.Printf("web dashboard: http://localhost%s", addr)

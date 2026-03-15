@@ -32,8 +32,49 @@ func nullInt32(s string) sql.NullInt32 {
 	return sql.NullInt32{Int32: int32(v), Valid: true}
 }
 
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/tasks", http.StatusSeeOther)
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+
+	servers, err := s.queries.GetUserServers(r.Context(), user.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get selected server from query param, default to first
+	selectedGuildID := r.URL.Query().Get("server")
+	var selectedServer *database.UserServer
+	for i := range servers {
+		if servers[i].GuildID == selectedGuildID {
+			selectedServer = &servers[i]
+			break
+		}
+	}
+	if selectedServer == nil && len(servers) > 0 {
+		selectedServer = &servers[0]
+	}
+
+	// Get subscriptions for selected server
+	var subs []database.TaskSubscription
+	if selectedServer != nil {
+		subs, err = s.queries.GetSubscriptionsByGuildIDs(r.Context(), []string{selectedServer.GuildID})
+		if err != nil {
+			log.Printf("failed to get subscriptions: %v", err)
+		}
+	}
+
+	data := map[string]any{
+		"ActivePage":     "dashboard",
+		"User":           user,
+		"Servers":        servers,
+		"SelectedServer": selectedServer,
+		"Subscriptions":  subs,
+		"IsAdmin":        user.Role == "admin",
+	}
+
+	if err := s.templates["dashboard"].ExecuteTemplate(w, "layout", data); err != nil {
+		log.Printf("template error: %v", err)
+	}
 }
 
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
@@ -49,10 +90,13 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user, _ := userFromContext(r.Context())
 	data := map[string]any{
 		"Tasks":      tasks,
 		"ActivePage": "tasks",
 		"Platforms":  platforms,
+		"User":       user,
+		"IsAdmin":    user.Role == "admin",
 		"Filter": map[string]string{
 			"Platform": platform,
 			"URL":      urlSearch,
@@ -121,12 +165,15 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user, _ := userFromContext(r.Context())
 	data := map[string]any{
 		"Runs":       runs,
 		"ActivePage": "logs",
 		"Platforms":  platforms,
 		"AllTasks":   allTasks,
 		"NextCursor": nextCursor,
+		"User":       user,
+		"IsAdmin":    user.Role == "admin",
 		"Filter": map[string]string{
 			"Platform": platform,
 			"Status":   status,
@@ -146,9 +193,12 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user, _ := userFromContext(r.Context())
 	data := map[string]any{
 		"ProxyLists": lists,
 		"ActivePage": "proxies",
+		"User":       user,
+		"IsAdmin":    user.Role == "admin",
 	}
 
 	if err := s.templates["proxies"].ExecuteTemplate(w, "layout", data); err != nil {

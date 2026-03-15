@@ -1,12 +1,17 @@
 package web
 
 import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/buckelew/go-monitor/internal/database"
@@ -15,14 +20,19 @@ import (
 //go:embed templates static
 var content embed.FS
 
+type contextKey string
+
+const userContextKey contextKey = "user"
+
 type Server struct {
-	queries   *database.Queries
-	db        *sql.DB
-	templates map[string]*template.Template
-	mux       *http.ServeMux
+	queries       *database.Queries
+	db            *sql.DB
+	sessionSecret []byte
+	templates     map[string]*template.Template
+	mux           *http.ServeMux
 }
 
-func NewServer(queries *database.Queries, db *sql.DB) *Server {
+func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string) *Server {
 	funcMap := template.FuncMap{
 		"formatDelay":    formatDelay,
 		"timeAgo":        timeAgo,
@@ -30,7 +40,7 @@ func NewServer(queries *database.Queries, db *sql.DB) *Server {
 		"formatTime":     formatTime,
 	}
 
-	pages := []string{"tasks", "logs", "proxies"}
+	pages := []string{"tasks", "logs", "proxies", "dashboard"}
 	templates := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		templates[page] = template.Must(
@@ -42,10 +52,11 @@ func NewServer(queries *database.Queries, db *sql.DB) *Server {
 	}
 
 	s := &Server{
-		queries:   queries,
-		db:        db,
-		templates: templates,
-		mux:       http.NewServeMux(),
+		queries:       queries,
+		db:            db,
+		sessionSecret: []byte(sessionSecret),
+		templates:     templates,
+		mux:           http.NewServeMux(),
 	}
 
 	s.routes()
@@ -54,19 +65,114 @@ func NewServer(queries *database.Queries, db *sql.DB) *Server {
 
 func (s *Server) routes() {
 	s.mux.Handle("GET /static/", http.FileServerFS(content))
+
+	// Redirect root
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
-	s.mux.HandleFunc("GET /tasks", s.handleTasks)
-	s.mux.HandleFunc("GET /logs", s.handleLogs)
-	s.mux.HandleFunc("GET /proxies", s.handleProxies)
-	s.mux.HandleFunc("POST /proxies", s.handleCreateProxyList)
-	s.mux.HandleFunc("GET /proxies/{id}/edit", s.handleEditProxyListForm)
-	s.mux.HandleFunc("PUT /proxies/{id}", s.handleUpdateProxyList)
-	s.mux.HandleFunc("DELETE /proxies/{id}", s.handleDeleteProxyList)
+
+	// User dashboard (any authenticated user)
+	s.mux.HandleFunc("GET /dashboard", s.requireAuth(s.handleDashboard))
+
+	// Admin routes
+	s.mux.HandleFunc("GET /tasks", s.requireAdmin(s.handleTasks))
+	s.mux.HandleFunc("GET /logs", s.requireAdmin(s.handleLogs))
+	s.mux.HandleFunc("GET /proxies", s.requireAdmin(s.handleProxies))
+	s.mux.HandleFunc("POST /proxies", s.requireAdmin(s.handleCreateProxyList))
+	s.mux.HandleFunc("GET /proxies/{id}/edit", s.requireAdmin(s.handleEditProxyListForm))
+	s.mux.HandleFunc("PUT /proxies/{id}", s.requireAdmin(s.handleUpdateProxyList))
+	s.mux.HandleFunc("DELETE /proxies/{id}", s.requireAdmin(s.handleDeleteProxyList))
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
+
+// --- auth middleware ---
+
+func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, ok := s.authenticateRequest(r)
+		if !ok {
+			http.Redirect(w, r, "/auth/discord", http.StatusSeeOther)
+			return
+		}
+		ctx := context.WithValue(r.Context(), userContextKey, user)
+		next(w, r.WithContext(ctx))
+	}
+}
+
+func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, ok := s.authenticateRequest(r)
+		if !ok {
+			http.Redirect(w, r, "/auth/discord", http.StatusSeeOther)
+			return
+		}
+		if user.Role != "admin" {
+			http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+			return
+		}
+		ctx := context.WithValue(r.Context(), userContextKey, user)
+		next(w, r.WithContext(ctx))
+	}
+}
+
+func (s *Server) authenticateRequest(r *http.Request) (database.DiscordUser, bool) {
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		return database.DiscordUser{}, false
+	}
+
+	parts := strings.SplitN(cookie.Value, ".", 2)
+	if len(parts) != 2 {
+		return database.DiscordUser{}, false
+	}
+
+	sessionID, sig := parts[0], parts[1]
+
+	// Verify HMAC signature
+	mac := hmac.New(sha256.New, s.sessionSecret)
+	mac.Write([]byte(sessionID))
+	expectedSig := hex.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(sig), []byte(expectedSig)) {
+		return database.DiscordUser{}, false
+	}
+
+	session, err := s.queries.GetSession(r.Context(), sessionID)
+	if err != nil {
+		return database.DiscordUser{}, false
+	}
+	if session.ExpiresAt.Before(time.Now()) {
+		s.queries.DeleteSession(r.Context(), sessionID)
+		return database.DiscordUser{}, false
+	}
+
+	user, err := s.queries.GetDiscordUserByID(r.Context(), session.DiscordUserID)
+	if err != nil {
+		return database.DiscordUser{}, false
+	}
+
+	return user, true
+}
+
+func userFromContext(ctx context.Context) (database.DiscordUser, bool) {
+	u, ok := ctx.Value(userContextKey).(database.DiscordUser)
+	return u, ok
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.authenticateRequest(r)
+	if !ok {
+		http.Redirect(w, r, "/auth/discord", http.StatusSeeOther)
+		return
+	}
+	if user.Role == "admin" {
+		http.Redirect(w, r, "/tasks", http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	}
+}
+
+// --- template helpers ---
 
 func formatDelay(ms int32) string {
 	if ms >= 60000 {

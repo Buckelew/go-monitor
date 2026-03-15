@@ -11,7 +11,7 @@ import (
 )
 
 const getDiscordUserByDiscordID = `-- name: GetDiscordUserByDiscordID :one
-SELECT id, discord_user_id, created_at, username, avatar, access_token, refresh_token, token_expires_at FROM discord_users WHERE discord_user_id = $1
+SELECT id, discord_user_id, created_at, username, avatar, access_token, refresh_token, token_expires_at, role FROM discord_users WHERE discord_user_id = $1
 `
 
 func (q *Queries) GetDiscordUserByDiscordID(ctx context.Context, discordUserID string) (DiscordUser, error) {
@@ -26,12 +26,13 @@ func (q *Queries) GetDiscordUserByDiscordID(ctx context.Context, discordUserID s
 		&i.AccessToken,
 		&i.RefreshToken,
 		&i.TokenExpiresAt,
+		&i.Role,
 	)
 	return i, err
 }
 
 const getDiscordUserByID = `-- name: GetDiscordUserByID :one
-SELECT id, discord_user_id, created_at, username, avatar, access_token, refresh_token, token_expires_at FROM discord_users WHERE id = $1
+SELECT id, discord_user_id, created_at, username, avatar, access_token, refresh_token, token_expires_at, role FROM discord_users WHERE id = $1
 `
 
 func (q *Queries) GetDiscordUserByID(ctx context.Context, id int32) (DiscordUser, error) {
@@ -46,6 +47,7 @@ func (q *Queries) GetDiscordUserByID(ctx context.Context, id int32) (DiscordUser
 		&i.AccessToken,
 		&i.RefreshToken,
 		&i.TokenExpiresAt,
+		&i.Role,
 	)
 	return i, err
 }
@@ -60,7 +62,7 @@ DO UPDATE SET
   access_token = EXCLUDED.access_token,
   refresh_token = EXCLUDED.refresh_token,
   token_expires_at = EXCLUDED.token_expires_at
-RETURNING id, discord_user_id, created_at, username, avatar, access_token, refresh_token, token_expires_at
+RETURNING id, discord_user_id, created_at, username, avatar, access_token, refresh_token, token_expires_at, role
 `
 
 type UpsertDiscordUserParams struct {
@@ -91,6 +93,7 @@ func (q *Queries) UpsertDiscordUser(ctx context.Context, arg UpsertDiscordUserPa
 		&i.AccessToken,
 		&i.RefreshToken,
 		&i.TokenExpiresAt,
+		&i.Role,
 	)
 	return i, err
 }
