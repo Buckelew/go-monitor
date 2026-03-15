@@ -1,0 +1,96 @@
+{{define "content"}}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Logs</h1>
+        <p class="page-subtitle">Recent task run history</p>
+    </div>
+</div>
+
+<div class="filter-bar">
+    <form method="GET" action="/logs" class="filter-form">
+        <div class="filter-select-wrap">
+            <svg class="filter-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            <select name="platform" class="filter-select" onchange="this.form.submit()">
+                <option value="">All Platforms</option>
+                {{range .Platforms}}
+                <option value="{{.}}"{{if eq . (index $.Filter "Platform")}} selected{{end}}>{{.}}</option>
+                {{end}}
+            </select>
+        </div>
+        <div class="filter-select-wrap">
+            <select name="status" class="filter-select" onchange="this.form.submit()">
+                <option value="">All Statuses</option>
+                <option value="completed"{{if eq (index .Filter "Status") "completed"}} selected{{end}}>Completed</option>
+                <option value="error"{{if eq (index .Filter "Status") "error"}} selected{{end}}>Error</option>
+            </select>
+        </div>
+        <div class="filter-select-wrap">
+            <select name="task_id" class="filter-select" onchange="this.form.submit()">
+                <option value="">All Tasks</option>
+                {{$tid := index .Filter "TaskID"}}
+                {{range .AllTasks}}
+                <option value="{{.ID}}"{{if eq (printf "%d" .ID) $tid}} selected{{end}}>{{.Platform}} — {{.Url}}</option>
+                {{end}}
+            </select>
+        </div>
+    </form>
+</div>
+
+{{if .Runs}}
+<div class="table-wrapper">
+    <table class="table">
+        <thead>
+            <tr>
+                <th class="th-time">Time</th>
+                <th>Task</th>
+                <th>Status</th>
+                <th class="th-duration">Duration</th>
+                <th>Error</th>
+            </tr>
+        </thead>
+        <tbody id="log-rows">
+            {{template "log-items" .}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="empty-state">
+    <p class="empty-title">No logs found</p>
+    <p class="empty-subtitle">Task run history will appear here.</p>
+</div>
+{{end}}
+{{end}}
+
+{{define "log-items"}}
+{{range .Runs}}
+<tr class="log-row">
+    <td class="cell-muted">{{formatTime .CompletedAt}}</td>
+    <td>
+        <span class="platform-badge platform-{{.Platform}}">{{.Platform}}</span>
+        <span class="log-url">{{.Url}}</span>
+    </td>
+    <td>
+        {{if eq .Status "completed"}}
+            <span class="status-badge status-healthy">Completed</span>
+        {{else}}
+            <span class="status-badge status-error">Error</span>
+        {{end}}
+    </td>
+    <td class="cell-muted">{{formatDuration .DurationSeconds}}</td>
+    <td class="cell-error">{{if .ErrorMessage.Valid}}{{.ErrorMessage.String}}{{end}}</td>
+</tr>
+{{end}}
+{{if .NextCursor}}
+<tr class="sentinel"
+    hx-get="/logs?cursor={{.NextCursor}}&platform={{index .Filter "Platform"}}&status={{index .Filter "Status"}}&task_id={{index .Filter "TaskID"}}"
+    hx-trigger="revealed"
+    hx-swap="outerHTML"
+    >
+    <td colspan="5" class="cell-loading">Loading more...</td>
+</tr>
+{{end}}
+{{end}}
+
+{{define "log-rows"}}
+{{template "log-items" .}}
+{{end}}

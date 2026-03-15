@@ -1,0 +1,76 @@
+{{define "content"}}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Tasks</h1>
+        <p class="page-subtitle">Monitoring task health overview</p>
+    </div>
+</div>
+
+<div class="filter-bar">
+    <form method="GET" action="/tasks" class="filter-form">
+        <div class="filter-select-wrap">
+            <svg class="filter-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            <select name="platform" class="filter-select" onchange="this.form.submit()">
+                <option value="">All Platforms</option>
+                {{range .Platforms}}
+                <option value="{{.}}"{{if eq . (index $.Filter "Platform")}} selected{{end}}>{{.}}</option>
+                {{end}}
+            </select>
+        </div>
+        <div class="filter-search-wrap">
+            <svg class="filter-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" name="url" class="filter-search" placeholder="Search by URL..." value="{{index .Filter "URL"}}">
+        </div>
+    </form>
+</div>
+
+{{if .Tasks}}
+<div class="table-wrapper">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Platform</th>
+                <th>URL</th>
+                <th class="th-delay">Delay</th>
+                <th>Last Run</th>
+                <th>Status</th>
+                <th class="th-num">Subs</th>
+                <th class="th-num">Items</th>
+                <th class="th-act"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Tasks}}
+            <tr>
+                <td><span class="platform-badge platform-{{.Platform}}">{{.Platform}}</span></td>
+                <td class="cell-url"><span class="url-text">{{.Url}}</span></td>
+                <td class="cell-delay"><code>{{formatDelay .Delay}}</code></td>
+                <td class="cell-muted">{{timeAgo .LastRunAt}}</td>
+                <td>
+                    {{if eq .LastRunStatus ""}}
+                        <span class="status-badge status-none">Pending</span>
+                    {{else if eq .LastRunStatus "completed"}}
+                        <span class="status-badge status-healthy">Healthy</span>
+                    {{else}}
+                        <span class="status-badge status-error">Error</span>
+                    {{end}}
+                </td>
+                <td class="cell-num">{{.SubCount}}</td>
+                <td class="cell-num">{{.ItemCount}}</td>
+                <td class="cell-act">
+                    <a href="/logs?task_id={{.ID}}" class="btn-icon btn-link" title="View Logs">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+                    </a>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="empty-state">
+    <p class="empty-title">No tasks found</p>
+    <p class="empty-subtitle">Tasks are auto-created when users subscribe to stores.</p>
+</div>
+{{end}}
+{{end}}
