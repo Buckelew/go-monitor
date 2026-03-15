@@ -57,14 +57,14 @@ func (t *ATCTask) Run(ctx context.Context) (*monitor.TaskResult, error) {
 		return nil, fmt.Errorf("failed to rotate proxy: %w", err)
 	}
 
-	proxyRaw := t.client.CurrentProxyRaw()
-	solveResult, err := t.solver.Solve(ctx, proxyRaw, "target:atc")
+	// TODO: convert proxy URL to solver format
+	shapeHeaders, err := t.solver.Solve(ctx, "", "target:atc")
 	if err != nil {
 		return nil, fmt.Errorf("solver failed: %w", err)
 	}
 
 	// Try the primary ATC endpoint
-	success, err := t.tryATC(ctx, solveResult)
+	success, err := t.tryATC(ctx, shapeHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (t *ATCTask) Run(ctx context.Context) (*monitor.TaskResult, error) {
 	// If primary failed with 424/forbidden, try the bypass endpoint
 	if !success {
 		log.Printf("[task %d] primary ATC failed, trying bypass endpoint", t.id)
-		success, err = t.tryBypass(ctx, solveResult)
+		success, err = t.tryBypass(ctx, shapeHeaders)
 		if err != nil {
 			return nil, err
 		}
@@ -86,7 +86,7 @@ func (t *ATCTask) Run(ctx context.Context) (*monitor.TaskResult, error) {
 	}, nil
 }
 
-func (t *ATCTask) tryATC(ctx context.Context, solved *solver.SolveResult) (bool, error) {
+func (t *ATCTask) tryATC(ctx context.Context, shapeHeaders map[string]string) (bool, error) {
 	body := map[string]any{
 		"cart_type":        "REGULAR",
 		"channel_id":       "90",
@@ -108,7 +108,7 @@ func (t *ATCTask) tryATC(ctx context.Context, solved *solver.SolveResult) (bool,
 		return false, fmt.Errorf("failed to create ATC request: %w", err)
 	}
 
-	setATCHeaders(req, solved)
+	setATCHeaders(req, shapeHeaders)
 
 	resp, err := t.client.Inner().Do(req)
 	if err != nil {
@@ -122,7 +122,7 @@ func (t *ATCTask) tryATC(ctx context.Context, solved *solver.SolveResult) (bool,
 	return resp.StatusCode == 200, nil
 }
 
-func (t *ATCTask) tryBypass(ctx context.Context, solved *solver.SolveResult) (bool, error) {
+func (t *ATCTask) tryBypass(ctx context.Context, shapeHeaders map[string]string) (bool, error) {
 	cartItem := map[string]any{
 		"cart_item": map[string]any{
 			"tcin":            t.tcin,
@@ -147,7 +147,7 @@ func (t *ATCTask) tryBypass(ctx context.Context, solved *solver.SolveResult) (bo
 		return false, fmt.Errorf("failed to create bypass request: %w", err)
 	}
 
-	setATCHeaders(req, solved)
+	setATCHeaders(req, shapeHeaders)
 
 	resp, err := t.client.Inner().Do(req)
 	if err != nil {
@@ -228,7 +228,7 @@ func (t *ATCTask) insertEvent(ctx context.Context, itemID int32, prevState, newS
 	}
 }
 
-func setATCHeaders(req *http.Request, solved *solver.SolveResult) {
+func setATCHeaders(req *http.Request, shapeHeaders map[string]string) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
@@ -245,13 +245,7 @@ func setATCHeaders(req *http.Request, solved *solver.SolveResult) {
 	req.Header.Set("Sec-Fetch-Site", "same-site")
 	req.Header.Set("Dnt", "1")
 
-	// Inject Shape security headers from solver
-	for key, value := range solved.ShapeHeaders {
+	for key, value := range shapeHeaders {
 		req.Header.Set(key, value)
-	}
-
-	// Inject cookies from solver
-	if solved.Cookies != "" {
-		req.Header.Set("Cookie", solved.Cookies)
 	}
 }

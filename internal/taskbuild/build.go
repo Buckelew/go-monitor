@@ -18,8 +18,7 @@ import (
 
 // BuildTask creates a Task from a database.Task row by loading proxies,
 // creating an HTTP client, and instantiating the platform-specific scraper.
-// For Target ATC tasks, the provided solver client is used.
-func BuildTask(ctx context.Context, queries *database.Queries, dbTask database.Task, solverClient *solver.Client) (monitor.Task, error) {
+func BuildTask(ctx context.Context, queries *database.Queries, dbTask database.Task) (monitor.Task, error) {
 	var rotator *httpclient.ProxyRotator
 	if dbTask.ProxyListID.Valid {
 		dbProxies, err := queries.GetProxiesByListID(ctx, dbTask.ProxyListID.Int32)
@@ -50,6 +49,7 @@ func BuildTask(ctx context.Context, queries *database.Queries, dbTask database.T
 		if err != nil {
 			return nil, fmt.Errorf("extract TCIN for task %d: %w", dbTask.ID, err)
 		}
+		solverClient := solver.New("")
 		return target.NewATCTask(*queries, client, solverClient, tcin, dbTask), nil
 	}
 
@@ -82,13 +82,13 @@ func BuildTask(ctx context.Context, queries *database.Queries, dbTask database.T
 
 // BuildInitialTasks builds Task values from a slice of database tasks,
 // skipping disabled tasks and logging errors.
-func BuildInitialTasks(ctx context.Context, queries *database.Queries, dbTasks []database.Task, solverClient *solver.Client) []monitor.Task {
+func BuildInitialTasks(ctx context.Context, queries *database.Queries, dbTasks []database.Task) []monitor.Task {
 	var tasks []monitor.Task
 	for _, dbTask := range dbTasks {
 		if !dbTask.Enabled {
 			continue
 		}
-		task, err := BuildTask(ctx, queries, dbTask, solverClient)
+		task, err := BuildTask(ctx, queries, dbTask)
 		if err != nil {
 			log.Printf("skip task %d: %v", dbTask.ID, err)
 			continue
