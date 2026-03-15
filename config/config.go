@@ -11,6 +11,8 @@ type (
 		App      App
 		Database Database
 		Discord  Discord
+		Web      Web
+		API      API
 	}
 
 	App struct {
@@ -32,7 +34,19 @@ type (
 	}
 
 	Discord struct {
-		Token string `env:"DISCORD_TOKEN,required"`
+		Token        string `env:"DISCORD_TOKEN,required"`
+		ClientID     string `env:"DISCORD_CLIENT_ID,required"`
+		ClientSecret string `env:"DISCORD_CLIENT_SECRET,required"`
+		RedirectURL  string `env:"DISCORD_REDIRECT_URL,required"`
+	}
+
+	Web struct {
+		Port int `env:"WEB_PORT" envDefault:"8080"`
+	}
+
+	API struct {
+		Port          int    `env:"API_PORT" envDefault:"3000"`
+		SessionSecret string `env:"SESSION_SECRET,required"`
 	}
 )
 

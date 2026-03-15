@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/buckelew/go-monitor/config"
+	"github.com/buckelew/go-monitor/internal/api"
 	"github.com/buckelew/go-monitor/internal/database"
 	"github.com/buckelew/go-monitor/internal/discord"
-	"github.com/buckelew/go-monitor/internal/httpclient"
+	"github.com/buckelew/go-monitor/internal/hub"
 	"github.com/buckelew/go-monitor/internal/monitor"
-	"github.com/buckelew/go-monitor/internal/monitor/platforms/bigcartel"
-	"github.com/buckelew/go-monitor/internal/monitor/platforms/reddit"
-	"github.com/buckelew/go-monitor/internal/monitor/platforms/shopify"
-	"github.com/buckelew/go-monitor/internal/monitor/platforms/squarespace"
+	"github.com/buckelew/go-monitor/internal/taskbuild"
+	"github.com/buckelew/go-monitor/internal/web"
 )
 
 func Run(cfg *config.Config) {
@@ -38,6 +38,16 @@ func Run(cfg *config.Config) {
 	}
 	defer db.Close()
 
+	// Web dashboard
+	webServer := web.NewServer(queries, db)
+	go func() {
+		addr := fmt.Sprintf(":%d", cfg.Web.Port)
+		log.Printf("web dashboard: http://localhost%s", addr)
+		if err := http.ListenAndServe(addr, webServer); err != nil && err != http.ErrServerClosed {
+			log.Printf("web server error: %v", err)
+		}
+	}()
+
 	// Discord bot
 	bot, err := discord.NewBot(cfg.Discord.Token)
 	if err != nil {
@@ -51,83 +61,41 @@ func Run(cfg *config.Config) {
 
 	notifier := discord.NewNotifier(bot)
 
+	// Event hub
+	eventHub := hub.New()
+
+	// Discord hub subscriber — bridges hub events to Discord notifications
+	discordSub := discord.NewHubSubscriber(eventHub, notifier, queries)
+	go discordSub.Run(ctx)
+
+	// Build initial tasks
 	dbTasks, err := queries.GetTasks(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
+	initialTasks := taskbuild.BuildInitialTasks(ctx, queries, dbTasks)
 
-	var tasks []monitor.Task
-	for _, dbTask := range dbTasks {
-		if !dbTask.Enabled {
-			continue
+	// Scheduler
+	scheduler := monitor.NewScheduler(queries, eventHub)
+
+	// API server
+	apiServer := api.NewServer(queries, db, eventHub, scheduler, bot, cfg, func(ctx context.Context, q *database.Queries, t database.Task) (monitor.Task, error) {
+		return taskbuild.BuildTask(ctx, q, t)
+	})
+	go func() {
+		addr := fmt.Sprintf(":%d", cfg.API.Port)
+		log.Printf("api server: http://localhost%s", addr)
+		if err := http.ListenAndServe(addr, apiServer); err != nil && err != http.ErrServerClosed {
+			log.Printf("api server error: %v", err)
 		}
+	}()
 
-		// Build proxy rotator and HTTP client for this task
-		var rotator *httpclient.ProxyRotator
-		if dbTask.ProxyListID.Valid {
-			dbProxies, err := queries.GetProxiesByListID(ctx, dbTask.ProxyListID.Int32)
-			if err != nil {
-				log.Printf("failed to load proxies for task %d: %v", dbTask.ID, err)
-			} else if len(dbProxies) > 0 {
-				var proxyURLs []string
-				for _, p := range dbProxies {
-					if p.Username.Valid && p.Username.String != "" {
-						proxyURLs = append(proxyURLs, fmt.Sprintf("http://%s:%s@%s:%s", p.Username.String, p.Password.String, p.Host, p.Port))
-					} else {
-						proxyURLs = append(proxyURLs, fmt.Sprintf("http://%s:%s", p.Host, p.Port))
-					}
-				}
-				rotator = httpclient.NewProxyRotator(proxyURLs)
-			}
-		}
-
-		client, err := httpclient.New(rotator)
-		if err != nil {
-			log.Printf("failed to create http client for task %d: %v", dbTask.ID, err)
-			continue
-		}
-
-		var scraper monitor.Scraper
-
-		switch dbTask.Platform {
-		case string(monitor.Shopify):
-			switch dbTask.TaskType {
-			case string(monitor.Search):
-				scraper = shopify.NewSearchShopify(dbTask.Url, client)
-			}
-		case string(monitor.Bigcartel):
-			switch dbTask.TaskType {
-			case string(monitor.Search):
-				scraper = bigcartel.NewSearchBigCartel(dbTask.Url, client)
-			}
-		case string(monitor.Squarespace):
-			switch dbTask.TaskType {
-			case string(monitor.Search):
-				scraper = squarespace.NewSearchSquarespace(dbTask.Url, client)
-			}
-		case string(monitor.Reddit):
-			switch dbTask.TaskType {
-			case string(monitor.Search):
-				scraper = reddit.NewSearchReddit(dbTask.Url, client)
-			}
-		}
-
-		if scraper == nil {
-			log.Printf("unsupported platform/type: %s/%s", dbTask.Platform, dbTask.TaskType)
-			continue
-		}
-
-		task := monitor.NewSearchTask(*queries, scraper, dbTask)
-		tasks = append(tasks, task)
+	if len(initialTasks) == 0 {
+		log.Println("no enabled tasks found, servers still running")
+		<-ctx.Done()
+	} else {
+		log.Printf("starting scheduler with %d task(s)", len(initialTasks))
+		scheduler.Start(ctx, initialTasks)
 	}
-
-	if len(tasks) == 0 {
-		log.Println("no enabled tasks found")
-		return
-	}
-
-	log.Printf("starting scheduler with %d task(s)", len(tasks))
-	scheduler := monitor.NewScheduler(tasks, queries, notifier)
-	scheduler.Start(ctx)
 	log.Println("shutdown complete")
 }
