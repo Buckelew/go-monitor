@@ -66,16 +66,6 @@ func Run(cfg *config.Config) {
 	// Proxy registry for hot-swapping proxies
 	proxyRegistry := httpclient.NewProxyRegistry()
 
-	// Web dashboard
-	webServer := web.NewServer(queries, db, cfg.API.SessionSecret, bot, cfg.Discord.ClientID, proxyRegistry)
-	go func() {
-		addr := fmt.Sprintf(":%d", cfg.Web.Port)
-		log.Printf("web dashboard: http://localhost%s", addr)
-		if err := http.ListenAndServe(addr, webServer); err != nil && err != http.ErrServerClosed {
-			log.Printf("web server error: %v", err)
-		}
-	}()
-
 	// Build initial tasks
 	dbTasks, err := queries.GetTasks(ctx)
 	if err != nil {
@@ -86,10 +76,22 @@ func Run(cfg *config.Config) {
 	// Scheduler
 	scheduler := monitor.NewScheduler(queries, eventHub)
 
-	// API server
-	apiServer := api.NewServer(queries, db, eventHub, scheduler, bot, cfg, func(ctx context.Context, q *database.Queries, t database.Task) (monitor.Task, error) {
+	buildTask := func(ctx context.Context, q *database.Queries, t database.Task) (monitor.Task, error) {
 		return taskbuild.BuildTask(ctx, q, t, solverClient, proxyRegistry)
-	})
+	}
+
+	// Web dashboard
+	webServer := web.NewServer(queries, db, cfg.API.SessionSecret, bot, cfg.Discord.ClientID, proxyRegistry, scheduler, buildTask)
+	go func() {
+		addr := fmt.Sprintf(":%d", cfg.Web.Port)
+		log.Printf("web dashboard: http://localhost%s", addr)
+		if err := http.ListenAndServe(addr, webServer); err != nil && err != http.ErrServerClosed {
+			log.Printf("web server error: %v", err)
+		}
+	}()
+
+	// API server
+	apiServer := api.NewServer(queries, db, eventHub, scheduler, bot, cfg, buildTask)
 	go func() {
 		addr := fmt.Sprintf(":%d", cfg.API.Port)
 		log.Printf("api server: http://localhost%s", addr)

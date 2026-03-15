@@ -17,6 +17,7 @@ import (
 	"github.com/buckelew/go-monitor/internal/database"
 	"github.com/buckelew/go-monitor/internal/discord"
 	"github.com/buckelew/go-monitor/internal/httpclient"
+	"github.com/buckelew/go-monitor/internal/monitor"
 )
 
 //go:embed templates static
@@ -26,6 +27,9 @@ type contextKey string
 
 const userContextKey contextKey = "user"
 
+// TaskBuilder creates a monitor.Task from a database row.
+type TaskBuilder func(ctx context.Context, queries *database.Queries, dbTask database.Task) (monitor.Task, error)
+
 type Server struct {
 	queries       *database.Queries
 	db            *sql.DB
@@ -33,11 +37,13 @@ type Server struct {
 	clientID      string
 	sessionSecret []byte
 	proxyRegistry *httpclient.ProxyRegistry
+	scheduler     *monitor.Scheduler
+	buildTask     TaskBuilder
 	templates     map[string]*template.Template
 	mux           *http.ServeMux
 }
 
-func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string, bot *discord.Bot, clientID string, proxyRegistry *httpclient.ProxyRegistry) *Server {
+func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string, bot *discord.Bot, clientID string, proxyRegistry *httpclient.ProxyRegistry, scheduler *monitor.Scheduler, buildTask TaskBuilder) *Server {
 	funcMap := template.FuncMap{
 		"formatDelay":    formatDelay,
 		"timeAgo":        timeAgo,
@@ -63,6 +69,8 @@ func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string, bot 
 		clientID:      clientID,
 		sessionSecret: []byte(sessionSecret),
 		proxyRegistry: proxyRegistry,
+		scheduler:     scheduler,
+		buildTask:     buildTask,
 		templates:     templates,
 		mux:           http.NewServeMux(),
 	}

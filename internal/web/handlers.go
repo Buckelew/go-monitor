@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -142,35 +143,59 @@ func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	url := strings.TrimSpace(r.FormValue("url"))
+	input := strings.TrimSpace(r.FormValue("url"))
 	channelID := r.FormValue("channel_id")
 	guildID := r.FormValue("guild_id")
 	mode := r.FormValue("mode")
 
-	if url == "" || channelID == "" || guildID == "" || mode == "" {
+	if input == "" || channelID == "" || guildID == "" || mode == "" {
 		http.Error(w, "all fields are required", http.StatusBadRequest)
 		return
 	}
 
-	// Look up or auto-create task
-	dbTask, err := s.queries.GetTaskByURL(r.Context(), url)
+	// Detect platform to determine task type and normalise the input.
+	platform, err := monitor.DetectPlatform(input)
 	if err != nil {
-		// Auto-detect platform and create task
-		platform, err := monitor.DetectPlatform(url)
+		http.Error(w, "unsupported platform: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	taskType := "search"
+	taskURL := input
+	if platform == monitor.Target {
+		tcin, err := monitor.ExtractTargetTCIN(input)
 		if err != nil {
-			http.Error(w, "unsupported platform: "+err.Error(), http.StatusBadRequest)
+			http.Error(w, "invalid Target URL or TCIN: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		taskURL = fmt.Sprintf("https://www.target.com/p/-/A-%s", tcin)
+		taskType = string(monitor.ATC)
+		mode = "restock" // Target only supports restock
+	}
+
+	// Look up or auto-create task
+	dbTask, err := s.queries.GetTaskByURL(r.Context(), taskURL)
+	if err != nil {
 		dbTask, err = s.queries.CreateTask(r.Context(), database.CreateTaskParams{
 			Platform: string(platform),
-			TaskType: "search",
-			Url:      url,
+			TaskType: taskType,
+			Url:      taskURL,
 			Delay:    5000,
 		})
 		if err != nil {
 			log.Printf("failed to create task: %v", err)
 			http.Error(w, "failed to create task", http.StatusInternalServerError)
 			return
+		}
+
+		// Build and add task to the running scheduler
+		if s.buildTask != nil && s.scheduler != nil {
+			task, buildErr := s.buildTask(r.Context(), s.queries, dbTask)
+			if buildErr != nil {
+				log.Printf("failed to build task %d: %v", dbTask.ID, buildErr)
+			} else {
+				s.scheduler.AddTask(r.Context(), task)
+			}
 		}
 	}
 
@@ -180,6 +205,23 @@ func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request
 	case "all", "new":
 		_, err = s.queries.CreateStoreSubscription(r.Context(), database.CreateStoreSubscriptionParams{
 			TaskID: dbTask.ID, ChannelID: channelID, Mode: mode, GuildID: guildIDNull,
+		})
+	case "restock":
+		// Create the item row so we have an item_id for the product subscription.
+		item, itemErr := s.queries.UpsertItem(r.Context(), database.UpsertItemParams{
+			TaskID:   dbTask.ID,
+			Url:      taskURL,
+			Platform: string(platform),
+			Data:     json.RawMessage(`{}`),
+			InStock:  false,
+		})
+		if itemErr != nil {
+			log.Printf("failed to create item for restock sub: %v", itemErr)
+			http.Error(w, "failed to create item", http.StatusInternalServerError)
+			return
+		}
+		_, err = s.queries.CreateProductSubscription(r.Context(), database.CreateProductSubscriptionParams{
+			TaskID: dbTask.ID, ItemID: sql.NullInt32{Int32: item.ID, Valid: true}, ChannelID: channelID, GuildID: guildIDNull,
 		})
 	default:
 		http.Error(w, "invalid mode", http.StatusBadRequest)
