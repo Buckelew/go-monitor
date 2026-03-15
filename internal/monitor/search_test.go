@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -50,6 +51,7 @@ func TestE2E_Shopify(t *testing.T) {
 	assert.Len(t, result.Events, 3, "run 1: expected 3 new_product events")
 	for _, e := range result.Events {
 		assert.Equal(t, monitor.EventNewProduct, e.Type)
+		assert.NotZero(t, e.ItemID, "new_product events should carry a DB item ID")
 	}
 	items := getItems(t, task.ID)
 	require.Len(t, items, 3)
@@ -84,6 +86,7 @@ func TestE2E_Shopify(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Events, 1, "run 4: expected 1 restock event")
 	assert.Equal(t, monitor.EventRestock, result.Events[0].Type)
+	assert.NotZero(t, result.Events[0].ItemID, "restock events should carry a DB item ID")
 	items = getItems(t, task.ID)
 	for _, it := range items {
 		assert.True(t, it.InStock)
@@ -96,6 +99,7 @@ func TestE2E_Shopify(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Events, 1, "run 5: expected 1 delisted event")
 	assert.Equal(t, monitor.EventDelisted, result.Events[0].Type)
+	assert.NotZero(t, result.Events[0].ItemID, "delisted events should carry a DB item ID")
 	items = getItems(t, task.ID)
 	for _, it := range items {
 		if it.Url == fmt.Sprintf("%s/products/product-b", server.URL) {
@@ -109,11 +113,14 @@ func TestE2E_Shopify(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Events, 1, "run 6: expected 1 restock event (un-delist)")
 	assert.Equal(t, monitor.EventRestock, result.Events[0].Type)
+	assert.NotZero(t, result.Events[0].ItemID, "un-delist restock events should carry a DB item ID")
 	items = getItems(t, task.ID)
 	for _, it := range items {
 		assert.False(t, it.Delisted)
 	}
 }
+
+
 
 func TestE2E_BigCartel(t *testing.T) {
 	store := &fakeStore{}
@@ -370,4 +377,98 @@ func TestE2E_Reddit(t *testing.T) {
 	for _, it := range items {
 		assert.False(t, it.Delisted)
 	}
+}
+
+func TestSchedulerDispatch(t *testing.T) {
+	truncateTables(t)
+
+	store := &fakeStore{}
+	server := httptest.NewServer(store)
+	defer server.Close()
+
+	task := createTestTask(t, "shopify", server.URL)
+	queries := database.New(testDB)
+
+	client, err := httpclient.New(nil)
+	require.NoError(t, err)
+
+	scraper := shopify.NewSearchShopify(server.URL, client)
+	searchTask := monitor.NewSearchTask(*queries, scraper, task)
+
+	notifier := &mockNotifier{}
+
+	// --- Run 1: seed items, first run is always suppressed ---
+	store.SetResponse(makeShopifyResponse(
+		shopifyFixture{Handle: "p1", Title: "Product 1", Available: true},
+		shopifyFixture{Handle: "p2", Title: "Product 2", Available: false},
+	))
+	runSchedulerOnce(t, searchTask, queries, notifier)
+	assert.Empty(t, notifier.calls, "first run should not notify")
+
+	// --- Create subscriptions ---
+	// "all" on channel-a, "new" on channel-b
+	_, err = testDB.Exec(
+		`INSERT INTO task_subscriptions (task_id, channel_id, mode) VALUES ($1, 'channel-a', 'all')`, task.ID)
+	require.NoError(t, err)
+	_, err = testDB.Exec(
+		`INSERT INTO task_subscriptions (task_id, channel_id, mode) VALUES ($1, 'channel-b', 'new')`, task.ID)
+	require.NoError(t, err)
+
+	// "restock" on channel-c for product p2
+	items := getItems(t, task.ID)
+	var p2ID int32
+	for _, it := range items {
+		if strings.Contains(it.Url, "p2") {
+			p2ID = it.ID
+		}
+	}
+	require.NotZero(t, p2ID, "should find p2 in DB")
+	_, err = testDB.Exec(
+		`INSERT INTO task_subscriptions (task_id, channel_id, mode, item_id) VALUES ($1, 'channel-c', 'restock', $2)`,
+		task.ID, p2ID)
+	require.NoError(t, err)
+
+	// --- Run 2: p2 restocks (OOS → IS) ---
+	store.SetResponse(makeShopifyResponse(
+		shopifyFixture{Handle: "p1", Title: "Product 1", Available: true},
+		shopifyFixture{Handle: "p2", Title: "Product 2", Available: true},
+	))
+	notifier.reset()
+	runSchedulerOnce(t, searchTask, queries, notifier)
+
+	// Restock event should reach channel-a (all) and channel-c (restock for p2),
+	// but NOT channel-b (new mode ignores restock events).
+	require.Len(t, notifier.calls, 2, "restock should notify 2 channels")
+	channels := []string{notifier.calls[0].channelID, notifier.calls[1].channelID}
+	assert.Contains(t, channels, "channel-a")
+	assert.Contains(t, channels, "channel-c")
+
+	// --- Run 3: new product p3 appears ---
+	store.SetResponse(makeShopifyResponse(
+		shopifyFixture{Handle: "p1", Title: "Product 1", Available: true},
+		shopifyFixture{Handle: "p2", Title: "Product 2", Available: true},
+		shopifyFixture{Handle: "p3", Title: "Product 3", Available: true},
+	))
+	notifier.reset()
+	runSchedulerOnce(t, searchTask, queries, notifier)
+
+	// new_product event should reach channel-a (all) and channel-b (new),
+	// but NOT channel-c (restock mode ignores new_product events).
+	require.Len(t, notifier.calls, 2, "new_product should notify 2 channels")
+	channels = []string{notifier.calls[0].channelID, notifier.calls[1].channelID}
+	assert.Contains(t, channels, "channel-a")
+	assert.Contains(t, channels, "channel-b")
+
+	// --- Run 4: p1 delisted ---
+	store.SetResponse(makeShopifyResponse(
+		shopifyFixture{Handle: "p2", Title: "Product 2", Available: true},
+		shopifyFixture{Handle: "p3", Title: "Product 3", Available: true},
+	))
+	notifier.reset()
+	runSchedulerOnce(t, searchTask, queries, notifier)
+
+	// Delisted event for p1 should reach channel-a (all) only.
+	// channel-b (new) ignores delisted. channel-c (restock) is for p2, not p1.
+	require.Len(t, notifier.calls, 1, "delist of p1 should notify 1 channel")
+	assert.Equal(t, "channel-a", notifier.calls[0].channelID)
 }

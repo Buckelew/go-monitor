@@ -30,3 +30,8 @@ func (b *Bot) SendEmbed(channelID string, embed *discordgo.MessageEmbed) error {
 	_, err := b.session.ChannelMessageSendEmbed(channelID, embed)
 	return err
 }
+
+// Session returns the underlying discordgo session for direct API calls.
+func (b *Bot) Session() *discordgo.Session {
+	return b.session
+}

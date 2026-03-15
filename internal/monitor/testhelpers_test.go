@@ -1,6 +1,7 @@
 package monitor_test
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -16,6 +18,8 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/buckelew/go-monitor/internal/database"
+	"github.com/buckelew/go-monitor/internal/hub"
+	"github.com/buckelew/go-monitor/internal/monitor"
 )
 
 var testDB *sql.DB
@@ -61,7 +65,7 @@ func TestMain(m *testing.M) {
 
 func truncateTables(t *testing.T) {
 	t.Helper()
-	_, err := testDB.Exec("TRUNCATE items, item_events, task_runs, tasks RESTART IDENTITY CASCADE")
+	_, err := testDB.Exec("TRUNCATE task_subscriptions, items, item_events, task_runs, tasks RESTART IDENTITY CASCADE")
 	if err != nil {
 		t.Fatalf("failed to truncate tables: %v", err)
 	}
@@ -71,14 +75,14 @@ func createTestTask(t *testing.T, platform, url string) database.Task {
 	t.Helper()
 	var task database.Task
 	err := testDB.QueryRow(
-		`INSERT INTO tasks (platform, task_type, url, delay, enabled, channel_id)
-		 VALUES ($1, 'search', $2, 5000, true, 'test-channel')
-		 RETURNING id, platform, task_type, url, proxy_list_id, delay, enabled, created_at, updated_at, channel_id`,
+		`INSERT INTO tasks (platform, task_type, url, delay, enabled)
+		 VALUES ($1, 'search', $2, 5000, true)
+		 RETURNING id, platform, task_type, url, proxy_list_id, delay, enabled, created_at, updated_at`,
 		platform, url,
 	).Scan(
 		&task.ID, &task.Platform, &task.TaskType, &task.Url,
 		&task.ProxyListID, &task.Delay, &task.Enabled,
-		&task.CreatedAt, &task.UpdatedAt, &task.ChannelID,
+		&task.CreatedAt, &task.UpdatedAt,
 	)
 	if err != nil {
 		t.Fatalf("failed to create test task: %v", err)
@@ -357,6 +361,80 @@ func getItems(t *testing.T, taskID int32) []database.Item {
 		items = append(items, i)
 	}
 	return items
+}
+
+// --- mock notifier that collects calls via hub events ---
+
+type notifyCall struct {
+	channelID string
+	event     monitor.ItemEvent
+}
+
+type mockNotifier struct {
+	mu    sync.Mutex
+	calls []notifyCall
+}
+
+func (m *mockNotifier) Notify(channelID string, event monitor.ItemEvent) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, notifyCall{channelID: channelID, event: event})
+	return nil
+}
+
+func (m *mockNotifier) reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = nil
+}
+
+// runSchedulerOnce creates a hub + scheduler, runs a single execution cycle,
+// then drains hub events through the subscription dispatch logic to populate
+// the mockNotifier with the resulting notifications.
+func runSchedulerOnce(t *testing.T, task monitor.Task, queries *database.Queries, notifier *mockNotifier) {
+	t.Helper()
+	eventHub := hub.New()
+	ch := eventHub.Subscribe(64)
+
+	scheduler := monitor.NewScheduler(queries, eventHub)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		scheduler.Start(ctx, []monitor.Task{task})
+		close(done)
+	}()
+
+	// The task delay is 5000ms so only the immediate first execution runs.
+	time.Sleep(500 * time.Millisecond)
+	cancel()
+	<-done
+
+	// Drain hub events and dispatch through subscription logic
+	close_loop:
+	for {
+		select {
+		case evt, ok := <-ch:
+			if !ok {
+				break close_loop
+			}
+			itemEvent, ok := evt.Data.(monitor.ItemEvent)
+			if !ok {
+				continue
+			}
+			subs, err := queries.GetSubscriptionsByTask(context.Background(), evt.TaskID)
+			if err != nil {
+				t.Fatalf("failed to get subscriptions: %v", err)
+			}
+			for _, sub := range subs {
+				if monitor.ShouldNotify(sub, itemEvent) {
+					notifier.Notify(sub.ChannelID, itemEvent)
+				}
+			}
+		default:
+			break close_loop
+		}
+	}
 }
 
 func getItemEvents(t *testing.T, itemID int32) []database.ItemEvent {

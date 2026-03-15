@@ -43,8 +43,9 @@ const (
 )
 
 type ItemEvent struct {
-	Type EventType
-	Item Item
+	Type   EventType
+	Item   Item
+	ItemID int32 // DB item ID, needed for product-level subscription matching
 }
 
 type TaskResult struct {
@@ -63,5 +64,4 @@ type Task interface {
 	Run(ctx context.Context) (*TaskResult, error)
 	Delay() int32
 	IsEnabled() bool
-	ChannelID() string
 }

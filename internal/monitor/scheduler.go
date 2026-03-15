@@ -8,28 +8,56 @@ import (
 	"time"
 
 	"github.com/buckelew/go-monitor/internal/database"
+	"github.com/buckelew/go-monitor/internal/hub"
 )
 
 type Scheduler struct {
-	tasks    []Task
-	queries  database.Queries
-	notifier Notifier
+	mu      sync.Mutex
+	tasks   map[int32]context.CancelFunc
+	queries database.Queries
+	hub     *hub.Hub
+	wg      sync.WaitGroup
 }
 
-func NewScheduler(tasks []Task, queries *database.Queries, notifier Notifier) *Scheduler {
-	return &Scheduler{tasks: tasks, queries: *queries, notifier: notifier}
-}
-
-func (s *Scheduler) Start(ctx context.Context) {
-	var wg sync.WaitGroup
-	for _, task := range s.tasks {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			s.runTask(ctx, task)
-		}()
+func NewScheduler(queries *database.Queries, hub *hub.Hub) *Scheduler {
+	return &Scheduler{
+		tasks:   make(map[int32]context.CancelFunc),
+		queries: *queries,
+		hub:     hub,
 	}
-	wg.Wait()
+}
+
+// Start launches goroutines for each initial task and blocks until ctx is
+// cancelled, then waits for all goroutines to finish.
+func (s *Scheduler) Start(ctx context.Context, initialTasks []Task) {
+	for _, task := range initialTasks {
+		s.addTask(ctx, task)
+	}
+	<-ctx.Done()
+	s.wg.Wait()
+}
+
+// AddTask adds a new task to the running scheduler. Safe for concurrent use.
+func (s *Scheduler) AddTask(ctx context.Context, task Task) {
+	s.addTask(ctx, task)
+}
+
+func (s *Scheduler) addTask(ctx context.Context, task Task) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.tasks[task.ID()]; exists {
+		return
+	}
+
+	taskCtx, cancel := context.WithCancel(ctx)
+	s.tasks[task.ID()] = cancel
+
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.runTask(taskCtx, task)
+	}()
 }
 
 func (s *Scheduler) runTask(ctx context.Context, task Task) {
@@ -75,11 +103,7 @@ func (s *Scheduler) executeTask(ctx context.Context, task Task) {
 	if !isFirst && len(result.Events) > 0 {
 		for _, event := range result.Events {
 			log.Printf("[task %d] %s: %s", task.ID(), event.Type, event.Item.Title)
-			if s.notifier != nil && task.ChannelID() != "" {
-				if err := s.notifier.Notify(task.ChannelID(), event); err != nil {
-					log.Printf("[task %d] failed to send notification: %v", task.ID(), err)
-				}
-			}
+			s.hub.Publish(hub.Event{TaskID: task.ID(), Data: event})
 		}
 	}
 }
@@ -107,4 +131,27 @@ func (s *Scheduler) isFirstRun(ctx context.Context, taskID int32) (bool, error) 
 		return true, nil
 	}
 	return false, nil
+}
+
+// ShouldNotify determines whether a subscription should receive a given event.
+//
+// Event routing matrix:
+//
+//	Mode      | new_product | restock | delisted
+//	----------+-------------+---------+---------
+//	"all"     |     yes     |   yes   |   yes      (store-level, all events)
+//	"new"     |     yes     |   no    |   no       (store-level, new listings only)
+//	"restock" |     no      |   yes   |   yes      (product-level, item_id must match)
+func ShouldNotify(sub database.TaskSubscription, event ItemEvent) bool {
+	switch sub.Mode {
+	case "all":
+		return true
+	case "new":
+		return event.Type == EventNewProduct
+	case "restock":
+		return (event.Type == EventRestock || event.Type == EventDelisted) &&
+			sub.ItemID.Valid && event.ItemID == sub.ItemID.Int32
+	default:
+		return false
+	}
 }

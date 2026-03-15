@@ -17,7 +17,6 @@ type Scraper interface {
 type SearchTask struct {
 	id        int32
 	scraper   Scraper
-	channelID string
 	delay     int32
 	isEnabled bool
 	queries   *database.Queries
@@ -28,7 +27,6 @@ func (s *SearchTask) Platform() Platform { return s.scraper.Platform() }
 func (s *SearchTask) Type() TaskType     { return Search }
 func (s *SearchTask) Delay() int32       { return s.delay }
 func (s *SearchTask) IsEnabled() bool    { return s.isEnabled }
-func (s *SearchTask) ChannelID() string  { return s.channelID }
 
 func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 	items, err := s.scraper.FetchProducts(ctx)
@@ -57,7 +55,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 				continue
 			}
 
-			events = append(events, ItemEvent{Type: EventNewProduct, Item: item})
+			events = append(events, ItemEvent{Type: EventNewProduct, Item: item, ItemID: created.ID})
 
 			// Log the event in DB
 			s.insertEvent(ctx, created.ID, json.RawMessage("{}"), item.Data)
@@ -74,13 +72,13 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			if err := s.queries.UndelistItem(ctx, existing.ID); err != nil {
 				log.Printf("[task %d] failed to un-delist item %s: %v", s.id, item.URL, err)
 			}
-			events = append(events, ItemEvent{Type: EventRestock, Item: item})
+			events = append(events, ItemEvent{Type: EventRestock, Item: item, ItemID: existing.ID})
 			s.insertEvent(ctx, existing.ID, existing.Data, item.Data)
 		}
 
 		// Check for restock (OOS → IS)
 		if !existing.Delisted && !existing.InStock && item.InStock {
-			events = append(events, ItemEvent{Type: EventRestock, Item: item})
+			events = append(events, ItemEvent{Type: EventRestock, Item: item, ItemID: existing.ID})
 			s.insertEvent(ctx, existing.ID, existing.Data, item.Data)
 		}
 
@@ -122,8 +120,9 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 					continue
 				}
 				events = append(events, ItemEvent{
-					Type: EventDelisted,
-					Item: Item{URL: dbItem.Url, Data: dbItem.Data},
+					Type:   EventDelisted,
+					Item:   Item{URL: dbItem.Url, Data: dbItem.Data},
+					ItemID: dbItem.ID,
 				})
 				s.insertEvent(ctx, dbItem.ID, dbItem.Data, json.RawMessage(`{"delisted": true}`))
 			}
@@ -145,5 +144,5 @@ func (s *SearchTask) insertEvent(ctx context.Context, itemID int32, prevState, n
 }
 
 func NewSearchTask(queries database.Queries, scraper Scraper, task database.Task) *SearchTask {
-	return &SearchTask{id: task.ID, scraper: scraper, channelID: task.ChannelID, delay: task.Delay, isEnabled: task.Enabled, queries: &queries}
+	return &SearchTask{id: task.ID, scraper: scraper, delay: task.Delay, isEnabled: task.Enabled, queries: &queries}
 }
