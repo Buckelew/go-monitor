@@ -136,24 +136,25 @@
 {{end}}
 
 <script>
+let detectTimer;
 function detectPlatform(url) {
     const el = document.getElementById('platform-detect');
     if (!url) { el.textContent = ''; return; }
-    try {
-        const host = new URL(url).hostname.toLowerCase();
-        let platform = '';
-        if (host.endsWith('.myshopify.com')) platform = 'Shopify';
-        else if (host.endsWith('.bigcartel.com')) platform = 'Big Cartel';
-        else if (host.endsWith('.squarespace.com')) platform = 'Squarespace';
-        else if (host === 'reddit.com' || host === 'www.reddit.com') platform = 'Reddit';
-        if (platform) {
-            el.innerHTML = '<span style="color:#059669">&#10003; Detected: ' + platform + '</span>';
-        } else {
-            el.innerHTML = '<span style="color:#DC2626">Platform not supported</span>';
-        }
-    } catch(e) {
-        el.textContent = '';
-    }
+    try { new URL(url); } catch(e) { el.textContent = ''; return; }
+    clearTimeout(detectTimer);
+    el.innerHTML = '<span style="color:#9CA3AF">Detecting...</span>';
+    detectTimer = setTimeout(function() {
+        fetch('/dashboard/detect-platform?url=' + encodeURIComponent(url))
+            .then(r => r.json())
+            .then(data => {
+                if (data.platform) {
+                    el.innerHTML = '<span style="color:#059669">&#10003; Detected: ' + data.platform + '</span>';
+                } else {
+                    el.innerHTML = '<span style="color:#DC2626">Platform not supported</span>';
+                }
+            })
+            .catch(() => { el.innerHTML = '<span style="color:#DC2626">Detection failed</span>'; });
+    }, 500);
 }
 document.addEventListener('click', function(e) {
     if (!e.target.closest('.breadcrumb-server')) {

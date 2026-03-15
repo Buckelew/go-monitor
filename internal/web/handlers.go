@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buckelew/go-monitor/internal/database"
+	"github.com/buckelew/go-monitor/internal/monitor"
 )
 
 var platforms = []string{"shopify", "bigcartel", "squarespace", "reddit"}
@@ -119,6 +119,23 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleDetectPlatform(w http.ResponseWriter, r *http.Request) {
+	rawURL := r.URL.Query().Get("url")
+	if rawURL == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"error":"url is required"}`))
+		return
+	}
+
+	platform, err := monitor.DetectPlatform(rawURL)
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		w.Write([]byte(`{"error":"` + err.Error() + `"}`))
+		return
+	}
+	w.Write([]byte(`{"platform":"` + string(platform) + `"}`))
+}
+
 func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -139,13 +156,13 @@ func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request
 	dbTask, err := s.queries.GetTaskByURL(r.Context(), url)
 	if err != nil {
 		// Auto-detect platform and create task
-		platform, err := detectPlatformFromURL(url)
+		platform, err := monitor.DetectPlatform(url)
 		if err != nil {
-			http.Error(w, "unsupported platform", http.StatusBadRequest)
+			http.Error(w, "unsupported platform: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 		dbTask, err = s.queries.CreateTask(r.Context(), database.CreateTaskParams{
-			Platform: platform,
+			Platform: string(platform),
 			TaskType: "search",
 			Url:      url,
 			Delay:    5000,
@@ -240,22 +257,6 @@ func (s *Server) syncUserServers(ctx context.Context, user database.DiscordUser)
 	}
 }
 
-func detectPlatformFromURL(rawURL string) (string, error) {
-	host := strings.ToLower(rawURL)
-	if strings.Contains(host, ".myshopify.com") {
-		return "shopify", nil
-	}
-	if strings.Contains(host, ".bigcartel.com") {
-		return "bigcartel", nil
-	}
-	if strings.Contains(host, ".squarespace.com") {
-		return "squarespace", nil
-	}
-	if strings.Contains(host, "reddit.com/r/") {
-		return "reddit", nil
-	}
-	return "", fmt.Errorf("unsupported platform")
-}
 
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 	platform := r.URL.Query().Get("platform")
