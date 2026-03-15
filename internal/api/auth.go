@@ -139,12 +139,7 @@ func (s *Server) handleDiscordCallback(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(sessionDuration.Seconds()),
 	})
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"id":       dbUser.ID,
-		"username": dbUser.Username,
-		"avatar":   dbUser.Avatar,
-	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // handleLogout deletes the session and clears the cookie.
