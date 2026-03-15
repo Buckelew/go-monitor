@@ -7,6 +7,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"time"
 )
 
 const getCompletedTaskRuns = `-- name: GetCompletedTaskRuns :many
@@ -30,6 +32,81 @@ func (q *Queries) GetCompletedTaskRuns(ctx context.Context, taskID int32) ([]Tas
 			&i.CompletedAt,
 			&i.Status,
 			&i.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRecentTaskRuns = `-- name: GetRecentTaskRuns :many
+SELECT
+  tr.id, tr.started_at, tr.completed_at, tr.status, tr.error_message,
+  t.platform, t.url, tr.task_id,
+  EXTRACT(EPOCH FROM (tr.completed_at - tr.started_at))::float AS duration_seconds
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id
+WHERE tr.status IN ('completed', 'error')
+  AND ($1::text IS NULL OR t.platform = $1)
+  AND ($2::text IS NULL OR tr.status = $2)
+  AND ($3::int IS NULL OR tr.task_id = $3)
+  AND ($4::timestamptz IS NULL OR tr.completed_at < $4)
+ORDER BY tr.completed_at DESC NULLS LAST
+LIMIT $5
+`
+
+type GetRecentTaskRunsParams struct {
+	Platform     sql.NullString `json:"platform"`
+	FilterStatus sql.NullString `json:"filter_status"`
+	TaskID       sql.NullInt32  `json:"task_id"`
+	Cursor       sql.NullTime   `json:"cursor"`
+	PageLimit    int32          `json:"page_limit"`
+}
+
+type GetRecentTaskRunsRow struct {
+	ID              int32          `json:"id"`
+	StartedAt       time.Time      `json:"started_at"`
+	CompletedAt     sql.NullTime   `json:"completed_at"`
+	Status          string         `json:"status"`
+	ErrorMessage    sql.NullString `json:"error_message"`
+	Platform        string         `json:"platform"`
+	Url             string         `json:"url"`
+	TaskID          int32          `json:"task_id"`
+	DurationSeconds float64        `json:"duration_seconds"`
+}
+
+func (q *Queries) GetRecentTaskRuns(ctx context.Context, arg GetRecentTaskRunsParams) ([]GetRecentTaskRunsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getRecentTaskRuns,
+		arg.Platform,
+		arg.FilterStatus,
+		arg.TaskID,
+		arg.Cursor,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetRecentTaskRunsRow
+	for rows.Next() {
+		var i GetRecentTaskRunsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.Status,
+			&i.ErrorMessage,
+			&i.Platform,
+			&i.Url,
+			&i.TaskID,
+			&i.DurationSeconds,
 		); err != nil {
 			return nil, err
 		}

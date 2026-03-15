@@ -11,9 +11,14 @@ import (
 )
 
 type DiscordUser struct {
-	ID            int32     `json:"id"`
-	DiscordUserID string    `json:"discord_user_id"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID             int32        `json:"id"`
+	DiscordUserID  string       `json:"discord_user_id"`
+	CreatedAt      time.Time    `json:"created_at"`
+	Username       string       `json:"username"`
+	Avatar         string       `json:"avatar"`
+	AccessToken    string       `json:"access_token"`
+	RefreshToken   string       `json:"refresh_token"`
+	TokenExpiresAt sql.NullTime `json:"token_expires_at"`
 }
 
 type Item struct {
@@ -47,9 +52,17 @@ type Proxy struct {
 }
 
 type ProxyList struct {
-	ID        int32     `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        int32          `json:"id"`
+	Name      string         `json:"name"`
+	CreatedAt time.Time      `json:"created_at"`
+	Platform  sql.NullString `json:"platform"`
+}
+
+type Session struct {
+	ID            string    `json:"id"`
+	DiscordUserID int32     `json:"discord_user_id"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type Task struct {
@@ -62,7 +75,6 @@ type Task struct {
 	Enabled     bool          `json:"enabled"`
 	CreatedAt   time.Time     `json:"created_at"`
 	UpdatedAt   time.Time     `json:"updated_at"`
-	ChannelID   string        `json:"channel_id"`
 }
 
 type TaskRun struct {
@@ -72,4 +84,22 @@ type TaskRun struct {
 	CompletedAt  sql.NullTime   `json:"completed_at"`
 	Status       string         `json:"status"`
 	ErrorMessage sql.NullString `json:"error_message"`
+}
+
+type TaskSubscription struct {
+	ID        int32          `json:"id"`
+	TaskID    int32          `json:"task_id"`
+	ChannelID string         `json:"channel_id"`
+	Mode      string         `json:"mode"`
+	ItemID    sql.NullInt32  `json:"item_id"`
+	CreatedAt time.Time      `json:"created_at"`
+	GuildID   sql.NullString `json:"guild_id"`
+}
+
+type UserServer struct {
+	ID            int32     `json:"id"`
+	DiscordUserID int32     `json:"discord_user_id"`
+	GuildID       string    `json:"guild_id"`
+	GuildName     string    `json:"guild_name"`
+	CreatedAt     time.Time `json:"created_at"`
 }

@@ -7,22 +7,36 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"time"
 )
+
+const countTasksByPlatform = `-- name: CountTasksByPlatform :one
+SELECT COUNT(*) FROM tasks WHERE platform = $1 AND enabled = true
+`
+
+func (q *Queries) CountTasksByPlatform(ctx context.Context, platform string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTasksByPlatform, platform)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
 
 const createTask = `-- name: CreateTask :one
 INSERT INTO tasks (
-  platform, task_type, url, delay
+  platform, task_type, url, delay, proxy_list_id
 ) VALUES (
-  $1, $2, $3, $4
+  $1, $2, $3, $4, $5
 )
-RETURNING id, platform, task_type, url, proxy_list_id, delay, enabled, created_at, updated_at, channel_id
+RETURNING id, platform, task_type, url, proxy_list_id, delay, enabled, created_at, updated_at
 `
 
 type CreateTaskParams struct {
-	Platform string `json:"platform"`
-	TaskType string `json:"task_type"`
-	Url      string `json:"url"`
-	Delay    int32  `json:"delay"`
+	Platform    string        `json:"platform"`
+	TaskType    string        `json:"task_type"`
+	Url         string        `json:"url"`
+	Delay       int32         `json:"delay"`
+	ProxyListID sql.NullInt32 `json:"proxy_list_id"`
 }
 
 func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error) {
@@ -31,6 +45,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		arg.TaskType,
 		arg.Url,
 		arg.Delay,
+		arg.ProxyListID,
 	)
 	var i Task
 	err := row.Scan(
@@ -43,13 +58,21 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.Enabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.ChannelID,
 	)
 	return i, err
 }
 
+const deleteTask = `-- name: DeleteTask :exec
+DELETE FROM tasks WHERE id = $1
+`
+
+func (q *Queries) DeleteTask(ctx context.Context, id int32) error {
+	_, err := q.db.ExecContext(ctx, deleteTask, id)
+	return err
+}
+
 const getTask = `-- name: GetTask :one
-SELECT id, platform, task_type, url, proxy_list_id, delay, enabled, created_at, updated_at, channel_id FROM tasks
+SELECT id, platform, task_type, url, proxy_list_id, delay, enabled, created_at, updated_at FROM tasks
 WHERE id = $1 LIMIT 1
 `
 
@@ -66,13 +89,33 @@ func (q *Queries) GetTask(ctx context.Context, id int32) (Task, error) {
 		&i.Enabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.ChannelID,
+	)
+	return i, err
+}
+
+const getTaskByURL = `-- name: GetTaskByURL :one
+SELECT id, platform, task_type, url, proxy_list_id, delay, enabled, created_at, updated_at FROM tasks WHERE url = $1
+`
+
+func (q *Queries) GetTaskByURL(ctx context.Context, url string) (Task, error) {
+	row := q.db.QueryRowContext(ctx, getTaskByURL, url)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.Platform,
+		&i.TaskType,
+		&i.Url,
+		&i.ProxyListID,
+		&i.Delay,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getTasks = `-- name: GetTasks :many
-SELECT id, platform, task_type, url, proxy_list_id, delay, enabled, created_at, updated_at, channel_id FROM tasks
+SELECT id, platform, task_type, url, proxy_list_id, delay, enabled, created_at, updated_at FROM tasks
 ORDER BY created_at DESC
 `
 
@@ -95,7 +138,6 @@ func (q *Queries) GetTasks(ctx context.Context) ([]Task, error) {
 			&i.Enabled,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.ChannelID,
 		); err != nil {
 			return nil, err
 		}
@@ -108,4 +150,94 @@ func (q *Queries) GetTasks(ctx context.Context) ([]Task, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const getTasksWithStats = `-- name: GetTasksWithStats :many
+SELECT
+  t.id, t.platform, t.url, t.delay, t.enabled, t.created_at,
+  COALESCE(lr.status, '') AS last_run_status,
+  lr.completed_at AS last_run_at,
+  COALESCE(sc.sub_count, 0)::int AS sub_count,
+  COALESCE(ic.item_count, 0)::int AS item_count
+FROM tasks t
+LEFT JOIN LATERAL (
+  SELECT status, completed_at
+  FROM task_runs WHERE task_id = t.id AND status IN ('completed', 'error')
+  ORDER BY completed_at DESC NULLS LAST LIMIT 1
+) lr ON true
+LEFT JOIN (
+  SELECT task_id, COUNT(*) AS sub_count FROM task_subscriptions GROUP BY task_id
+) sc ON sc.task_id = t.id
+LEFT JOIN (
+  SELECT task_id, COUNT(*) AS item_count FROM items WHERE delisted = false GROUP BY task_id
+) ic ON ic.task_id = t.id
+WHERE ($1::text IS NULL OR t.platform = $1)
+  AND ($2::text IS NULL OR t.url ILIKE '%' || $2 || '%')
+ORDER BY t.created_at DESC
+`
+
+type GetTasksWithStatsParams struct {
+	Platform  sql.NullString `json:"platform"`
+	UrlSearch sql.NullString `json:"url_search"`
+}
+
+type GetTasksWithStatsRow struct {
+	ID            int32        `json:"id"`
+	Platform      string       `json:"platform"`
+	Url           string       `json:"url"`
+	Delay         int32        `json:"delay"`
+	Enabled       bool         `json:"enabled"`
+	CreatedAt     time.Time    `json:"created_at"`
+	LastRunStatus string       `json:"last_run_status"`
+	LastRunAt     sql.NullTime `json:"last_run_at"`
+	SubCount      int32        `json:"sub_count"`
+	ItemCount     int32        `json:"item_count"`
+}
+
+func (q *Queries) GetTasksWithStats(ctx context.Context, arg GetTasksWithStatsParams) ([]GetTasksWithStatsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getTasksWithStats, arg.Platform, arg.UrlSearch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTasksWithStatsRow
+	for rows.Next() {
+		var i GetTasksWithStatsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Platform,
+			&i.Url,
+			&i.Delay,
+			&i.Enabled,
+			&i.CreatedAt,
+			&i.LastRunStatus,
+			&i.LastRunAt,
+			&i.SubCount,
+			&i.ItemCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateTaskEnabled = `-- name: UpdateTaskEnabled :exec
+UPDATE tasks SET enabled = $2, updated_at = NOW() WHERE id = $1
+`
+
+type UpdateTaskEnabledParams struct {
+	ID      int32 `json:"id"`
+	Enabled bool  `json:"enabled"`
+}
+
+func (q *Queries) UpdateTaskEnabled(ctx context.Context, arg UpdateTaskEnabledParams) error {
+	_, err := q.db.ExecContext(ctx, updateTaskEnabled, arg.ID, arg.Enabled)
+	return err
 }
