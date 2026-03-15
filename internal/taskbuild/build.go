@@ -12,6 +12,8 @@ import (
 	"github.com/buckelew/go-monitor/internal/monitor/platforms/reddit"
 	"github.com/buckelew/go-monitor/internal/monitor/platforms/shopify"
 	"github.com/buckelew/go-monitor/internal/monitor/platforms/squarespace"
+	"github.com/buckelew/go-monitor/internal/monitor/platforms/target"
+	"github.com/buckelew/go-monitor/internal/solver"
 )
 
 // BuildTask creates a Task from a database.Task row by loading proxies,
@@ -39,6 +41,16 @@ func BuildTask(ctx context.Context, queries *database.Queries, dbTask database.T
 	client, err := httpclient.New(rotator)
 	if err != nil {
 		return nil, fmt.Errorf("create http client for task %d: %w", dbTask.ID, err)
+	}
+
+	// Target ATC tasks have a different task type and don't use the Scraper interface.
+	if dbTask.Platform == string(monitor.Target) && dbTask.TaskType == string(monitor.ATC) {
+		tcin, err := monitor.ExtractTargetTCIN(dbTask.Url)
+		if err != nil {
+			return nil, fmt.Errorf("extract TCIN for task %d: %w", dbTask.ID, err)
+		}
+		solverClient := solver.New("")
+		return target.NewATCTask(*queries, client, solverClient, tcin, dbTask), nil
 	}
 
 	var scraper monitor.Scraper

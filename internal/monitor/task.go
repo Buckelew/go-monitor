@@ -12,11 +12,13 @@ const (
 	Reddit      Platform = "reddit"
 	Shopify     Platform = "shopify"
 	Squarespace Platform = "squarespace"
+	Target      Platform = "target"
 )
 
 type TaskType string
 
 const (
+	ATC     TaskType = "atc"
 	Restock TaskType = "restock"
 	Search  TaskType = "search"
 )
