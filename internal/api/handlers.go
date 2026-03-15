@@ -277,6 +277,16 @@ func (s *Server) autoCreateTask(ctx context.Context, rawURL string) (database.Ta
 		return database.Task{}, err
 	}
 
+	// Determine task type — Target uses ATC, everything else uses Search.
+	taskType := monitor.Search
+	if platform == monitor.Target {
+		// Validate that we can extract a TCIN from the input.
+		if _, err := monitor.ExtractTargetTCIN(rawURL); err != nil {
+			return database.Task{}, fmt.Errorf("invalid Target URL: %w", err)
+		}
+		taskType = monitor.ATC
+	}
+
 	taskCount, err := s.queries.CountTasksByPlatform(ctx, string(platform))
 	if err != nil {
 		return database.Task{}, fmt.Errorf("count tasks: %w", err)
@@ -305,7 +315,7 @@ func (s *Server) autoCreateTask(ctx context.Context, rawURL string) (database.Ta
 
 	dbTask, err := s.queries.CreateTask(ctx, database.CreateTaskParams{
 		Platform:    string(platform),
-		TaskType:    string(monitor.Search),
+		TaskType:    string(taskType),
 		Url:         rawURL,
 		Delay:       delay,
 		ProxyListID: proxyListID,

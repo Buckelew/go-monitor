@@ -78,6 +78,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /dashboard", s.requireAuth(s.handleDashboard))
 
 	// User dashboard actions
+	s.mux.HandleFunc("GET /dashboard/detect-platform", s.requireAuth(s.handleDetectPlatform))
 	s.mux.HandleFunc("POST /dashboard/subscriptions", s.requireAuth(s.handleCreateSubscription))
 	s.mux.HandleFunc("DELETE /dashboard/subscriptions/{id}", s.requireAuth(s.handleDeleteSubscription))
 

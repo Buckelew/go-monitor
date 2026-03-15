@@ -13,6 +13,7 @@ type (
 		Discord  Discord
 		Web      Web
 		API      API
+		Solver   Solver
 	}
 
 	App struct {
@@ -47,6 +48,11 @@ type (
 	API struct {
 		Port          int    `env:"API_PORT" envDefault:"3000"`
 		SessionSecret string `env:"SESSION_SECRET,required"`
+	}
+
+	Solver struct {
+		APIToken string `env:"SOLVER_API_TOKEN"`
+		BaseURL  string `env:"SOLVER_BASE_URL"`
 	}
 )
 

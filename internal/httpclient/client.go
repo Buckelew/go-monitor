@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"fmt"
+	"net/url"
 	"sync"
 
 	tls_client "github.com/bogdanfinn/tls-client"
@@ -9,8 +10,9 @@ import (
 )
 
 type Client struct {
-	inner   tls_client.HttpClient
-	rotator *ProxyRotator
+	inner        tls_client.HttpClient
+	rotator      *ProxyRotator
+	currentProxy string // last proxy URL set by RotateProxy
 }
 
 func New(rotator *ProxyRotator) (*Client, error) {
@@ -46,12 +48,39 @@ func (c *Client) RotateProxy() error {
 	if proxy == "" {
 		return nil
 	}
+	c.currentProxy = proxy
 	return c.inner.SetProxy(proxy)
+}
+
+// CurrentProxyRaw returns the current proxy in host:port:user:pass format
+// suitable for external APIs like the Shape solver.
+func (c *Client) CurrentProxyRaw() string {
+	if c.currentProxy == "" {
+		return ""
+	}
+	return ProxyURLToRaw(c.currentProxy)
 }
 
 // Inner returns the underlying tls-client for direct use.
 func (c *Client) Inner() tls_client.HttpClient {
 	return c.inner
+}
+
+// ProxyURLToRaw converts a proxy URL (http://user:pass@host:port) to
+// the raw format (host:port:user:pass) expected by external APIs.
+func ProxyURLToRaw(proxyURL string) string {
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		return proxyURL
+	}
+	host := u.Hostname()
+	port := u.Port()
+	if u.User == nil {
+		return host + ":" + port
+	}
+	user := u.User.Username()
+	pass, _ := u.User.Password()
+	return fmt.Sprintf("%s:%s:%s:%s", host, port, user, pass)
 }
 
 // ProxyRotator selects proxies in round-robin order.

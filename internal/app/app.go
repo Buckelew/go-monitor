@@ -15,6 +15,7 @@ import (
 	"github.com/buckelew/go-monitor/internal/discord"
 	"github.com/buckelew/go-monitor/internal/hub"
 	"github.com/buckelew/go-monitor/internal/monitor"
+	"github.com/buckelew/go-monitor/internal/solver"
 	"github.com/buckelew/go-monitor/internal/taskbuild"
 	"github.com/buckelew/go-monitor/internal/web"
 )
@@ -68,19 +69,22 @@ func Run(cfg *config.Config) {
 		}
 	}()
 
+	// Shape solver client
+	solverClient := solver.New(cfg.Solver.BaseURL, cfg.Solver.APIToken)
+
 	// Build initial tasks
 	dbTasks, err := queries.GetTasks(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	initialTasks := taskbuild.BuildInitialTasks(ctx, queries, dbTasks)
+	initialTasks := taskbuild.BuildInitialTasks(ctx, queries, dbTasks, solverClient)
 
 	// Scheduler
 	scheduler := monitor.NewScheduler(queries, eventHub)
 
 	// API server
 	apiServer := api.NewServer(queries, db, eventHub, scheduler, bot, cfg, func(ctx context.Context, q *database.Queries, t database.Task) (monitor.Task, error) {
-		return taskbuild.BuildTask(ctx, q, t)
+		return taskbuild.BuildTask(ctx, q, t, solverClient)
 	})
 	go func() {
 		addr := fmt.Sprintf(":%d", cfg.API.Port)
