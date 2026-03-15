@@ -34,7 +34,7 @@ func TestE2E_Shopify(t *testing.T) {
 	// baseURL = server.URL so HTTP requests go to the test server
 	// URL = server.URL so product links are constructed from server.URL
 	scraper := shopify.NewSearchShopify(server.URL, client)
-	searchTask := monitor.NewSearchTask(*queries, scraper, task)
+	searchTask := monitor.NewSearchTask(*queries, scraper, task, nil)
 
 	ctx := context.Background()
 
@@ -136,7 +136,7 @@ func TestE2E_BigCartel(t *testing.T) {
 	require.NoError(t, err)
 
 	scraper := bigcartel.NewSearchBigCartel(storeURL, client, &monitor.Opts{BaseURL: server.URL})
-	searchTask := monitor.NewSearchTask(*queries, scraper, task)
+	searchTask := monitor.NewSearchTask(*queries, scraper, task, nil)
 
 	ctx := context.Background()
 
@@ -214,7 +214,7 @@ func TestE2E_Squarespace(t *testing.T) {
 	require.NoError(t, err)
 
 	scraper := squarespace.NewSearchSquarespace(server.URL, client)
-	searchTask := monitor.NewSearchTask(*queries, scraper, task)
+	searchTask := monitor.NewSearchTask(*queries, scraper, task, nil)
 
 	ctx := context.Background()
 
@@ -286,7 +286,7 @@ func TestE2E_Squarespace_Pagination(t *testing.T) {
 	require.NoError(t, err)
 
 	scraper := squarespace.NewSearchSquarespace(server.URL, client)
-	searchTask := monitor.NewSearchTask(*queries, scraper, task)
+	searchTask := monitor.NewSearchTask(*queries, scraper, task, nil)
 
 	ctx := context.Background()
 
@@ -325,7 +325,7 @@ func TestE2E_Reddit(t *testing.T) {
 	require.NoError(t, err)
 
 	scraper := reddit.NewSearchReddit(subredditURL, client, &monitor.Opts{BaseURL: server.URL})
-	searchTask := monitor.NewSearchTask(*queries, scraper, task)
+	searchTask := monitor.NewSearchTask(*queries, scraper, task, nil)
 
 	ctx := context.Background()
 
@@ -393,7 +393,7 @@ func TestSchedulerDispatch(t *testing.T) {
 	require.NoError(t, err)
 
 	scraper := shopify.NewSearchShopify(server.URL, client)
-	searchTask := monitor.NewSearchTask(*queries, scraper, task)
+	searchTask := monitor.NewSearchTask(*queries, scraper, task, nil)
 
 	notifier := &mockNotifier{}
 

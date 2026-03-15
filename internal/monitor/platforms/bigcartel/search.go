@@ -21,6 +21,8 @@ func (s *SearchBigCartel) Platform() monitor.Platform {
 	return monitor.Bigcartel
 }
 
+func (s *SearchBigCartel) Client() *httpclient.Client { return s.client }
+
 func (s *SearchBigCartel) FetchProducts(ctx context.Context) ([]monitor.Item, error) {
 	apiURL, err := productsURL(s.URL, s.baseURL)
 	if err != nil {

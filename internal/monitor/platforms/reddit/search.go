@@ -23,6 +23,8 @@ func (s *SearchReddit) Platform() monitor.Platform {
 	return monitor.Reddit
 }
 
+func (s *SearchReddit) Client() *httpclient.Client { return s.client }
+
 func (s *SearchReddit) FetchProducts(ctx context.Context) ([]monitor.Item, error) {
 	apiURL, err := postsURL(s.URL, s.baseURL)
 	if err != nil {

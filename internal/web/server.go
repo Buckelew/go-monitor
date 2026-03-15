@@ -16,6 +16,7 @@ import (
 
 	"github.com/buckelew/go-monitor/internal/database"
 	"github.com/buckelew/go-monitor/internal/discord"
+	"github.com/buckelew/go-monitor/internal/httpclient"
 )
 
 //go:embed templates static
@@ -31,11 +32,12 @@ type Server struct {
 	bot           *discord.Bot
 	clientID      string
 	sessionSecret []byte
+	proxyRegistry *httpclient.ProxyRegistry
 	templates     map[string]*template.Template
 	mux           *http.ServeMux
 }
 
-func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string, bot *discord.Bot, clientID string) *Server {
+func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string, bot *discord.Bot, clientID string, proxyRegistry *httpclient.ProxyRegistry) *Server {
 	funcMap := template.FuncMap{
 		"formatDelay":    formatDelay,
 		"timeAgo":        timeAgo,
@@ -60,6 +62,7 @@ func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string, bot 
 		bot:           bot,
 		clientID:      clientID,
 		sessionSecret: []byte(sessionSecret),
+		proxyRegistry: proxyRegistry,
 		templates:     templates,
 		mux:           http.NewServeMux(),
 	}

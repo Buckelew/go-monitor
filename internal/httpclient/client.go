@@ -61,6 +61,16 @@ func (c *Client) CurrentProxyRaw() string {
 	return ProxyURLToRaw(c.currentProxy)
 }
 
+// SetRotator swaps the proxy rotator and immediately sets the first proxy.
+func (c *Client) SetRotator(rotator *ProxyRotator) {
+	c.rotator = rotator
+	if rotator != nil {
+		if proxy := rotator.Next(); proxy != "" {
+			c.inner.SetProxy(proxy)
+		}
+	}
+}
+
 // Inner returns the underlying tls-client for direct use.
 func (c *Client) Inner() tls_client.HttpClient {
 	return c.inner

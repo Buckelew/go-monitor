@@ -13,6 +13,7 @@ import (
 	"github.com/buckelew/go-monitor/internal/api"
 	"github.com/buckelew/go-monitor/internal/database"
 	"github.com/buckelew/go-monitor/internal/discord"
+	"github.com/buckelew/go-monitor/internal/httpclient"
 	"github.com/buckelew/go-monitor/internal/hub"
 	"github.com/buckelew/go-monitor/internal/monitor"
 	"github.com/buckelew/go-monitor/internal/solver"
@@ -59,8 +60,14 @@ func Run(cfg *config.Config) {
 	discordSub := discord.NewHubSubscriber(eventHub, notifier, queries)
 	go discordSub.Run(ctx)
 
+	// Shape solver client
+	solverClient := solver.New(cfg.Solver.BaseURL, cfg.Solver.APIToken)
+
+	// Proxy registry for hot-swapping proxies
+	proxyRegistry := httpclient.NewProxyRegistry()
+
 	// Web dashboard
-	webServer := web.NewServer(queries, db, cfg.API.SessionSecret, bot, cfg.Discord.ClientID)
+	webServer := web.NewServer(queries, db, cfg.API.SessionSecret, bot, cfg.Discord.ClientID, proxyRegistry)
 	go func() {
 		addr := fmt.Sprintf(":%d", cfg.Web.Port)
 		log.Printf("web dashboard: http://localhost%s", addr)
@@ -69,22 +76,19 @@ func Run(cfg *config.Config) {
 		}
 	}()
 
-	// Shape solver client
-	solverClient := solver.New(cfg.Solver.BaseURL, cfg.Solver.APIToken)
-
 	// Build initial tasks
 	dbTasks, err := queries.GetTasks(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	initialTasks := taskbuild.BuildInitialTasks(ctx, queries, dbTasks, solverClient)
+	initialTasks := taskbuild.BuildInitialTasks(ctx, queries, dbTasks, solverClient, proxyRegistry)
 
 	// Scheduler
 	scheduler := monitor.NewScheduler(queries, eventHub)
 
 	// API server
 	apiServer := api.NewServer(queries, db, eventHub, scheduler, bot, cfg, func(ctx context.Context, q *database.Queries, t database.Task) (monitor.Task, error) {
-		return taskbuild.BuildTask(ctx, q, t, solverClient)
+		return taskbuild.BuildTask(ctx, q, t, solverClient, proxyRegistry)
 	})
 	go func() {
 		addr := fmt.Sprintf(":%d", cfg.API.Port)

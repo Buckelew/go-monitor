@@ -21,6 +21,8 @@ func (s *SearchSquarespace) Platform() monitor.Platform {
 	return monitor.Squarespace
 }
 
+func (s *SearchSquarespace) Client() *httpclient.Client { return s.client }
+
 func (s *SearchSquarespace) FetchProducts(ctx context.Context) ([]monitor.Item, error) {
 	var allItems []monitor.Item
 	offset := 0

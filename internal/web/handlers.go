@@ -449,6 +449,9 @@ func (s *Server) handleCreateProxyList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Bump proxy version so running tasks pick up new proxies
+	s.proxyRegistry.Bump(list.ID)
+
 	http.Redirect(w, r, "/proxies", http.StatusSeeOther)
 }
 
@@ -569,6 +572,9 @@ func (s *Server) handleUpdateProxyList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Bump proxy version so running tasks pick up changes
+	s.proxyRegistry.Bump(int32(id))
 
 	w.WriteHeader(http.StatusOK)
 }

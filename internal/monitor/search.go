@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/buckelew/go-monitor/internal/database"
+	"github.com/buckelew/go-monitor/internal/httpclient"
 )
 
 type Scraper interface {
@@ -14,12 +16,22 @@ type Scraper interface {
 	Platform() Platform
 }
 
+// ScraperWithClient is implemented by scrapers that expose their HTTP client
+// for proxy hot-swapping.
+type ScraperWithClient interface {
+	Scraper
+	Client() *httpclient.Client
+}
+
 type SearchTask struct {
-	id        int32
-	scraper   Scraper
-	delay     int32
-	isEnabled bool
-	queries   *database.Queries
+	id           int32
+	scraper      Scraper
+	delay        int32
+	isEnabled    bool
+	queries      *database.Queries
+	proxyListID  sql.NullInt32
+	registry     *httpclient.ProxyRegistry
+	proxyVersion int64
 }
 
 func (s *SearchTask) ID() int32          { return s.id }
@@ -29,6 +41,8 @@ func (s *SearchTask) Delay() int32       { return s.delay }
 func (s *SearchTask) IsEnabled() bool    { return s.isEnabled }
 
 func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
+	s.maybeRefreshProxies(ctx)
+
 	items, err := s.scraper.FetchProducts(ctx)
 	if err != nil {
 		return nil, err
@@ -143,6 +157,52 @@ func (s *SearchTask) insertEvent(ctx context.Context, itemID int32, prevState, n
 	}
 }
 
-func NewSearchTask(queries database.Queries, scraper Scraper, task database.Task) *SearchTask {
-	return &SearchTask{id: task.ID, scraper: scraper, delay: task.Delay, isEnabled: task.Enabled, queries: &queries}
+func (s *SearchTask) maybeRefreshProxies(ctx context.Context) {
+	if s.registry == nil || !s.proxyListID.Valid {
+		return
+	}
+
+	currentVersion := s.registry.Version(s.proxyListID.Int32)
+	if currentVersion == s.proxyVersion {
+		return
+	}
+
+	swc, ok := s.scraper.(ScraperWithClient)
+	if !ok {
+		return
+	}
+
+	dbProxies, err := s.queries.GetProxiesByListID(ctx, s.proxyListID.Int32)
+	if err != nil {
+		log.Printf("[task %d] failed to reload proxies: %v", s.id, err)
+		return
+	}
+
+	var proxyURLs []string
+	for _, p := range dbProxies {
+		if p.Username.Valid && p.Username.String != "" {
+			proxyURLs = append(proxyURLs, fmt.Sprintf("http://%s:%s@%s:%s", p.Username.String, p.Password.String, p.Host, p.Port))
+		} else {
+			proxyURLs = append(proxyURLs, fmt.Sprintf("http://%s:%s", p.Host, p.Port))
+		}
+	}
+
+	if len(proxyURLs) > 0 {
+		swc.Client().SetRotator(httpclient.NewProxyRotator(proxyURLs))
+	}
+
+	s.proxyVersion = currentVersion
+	log.Printf("[task %d] proxies refreshed (version %d)", s.id, currentVersion)
+}
+
+func NewSearchTask(queries database.Queries, scraper Scraper, task database.Task, registry *httpclient.ProxyRegistry) *SearchTask {
+	return &SearchTask{
+		id:          task.ID,
+		scraper:     scraper,
+		delay:       task.Delay,
+		isEnabled:   task.Enabled,
+		queries:     &queries,
+		proxyListID: task.ProxyListID,
+		registry:    registry,
+	}
 }
