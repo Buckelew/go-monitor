@@ -14,11 +14,11 @@ import (
 const countProxiesByPlatform = `-- name: CountProxiesByPlatform :one
 SELECT COUNT(DISTINCT p.id)
 FROM proxies p
-JOIN proxy_lists pl ON pl.id = p.proxy_list_id
-WHERE pl.platform = $1
+JOIN proxy_list_platforms plp ON plp.proxy_list_id = p.proxy_list_id
+WHERE plp.platform = $1
 `
 
-func (q *Queries) CountProxiesByPlatform(ctx context.Context, platform sql.NullString) (int64, error) {
+func (q *Queries) CountProxiesByPlatform(ctx context.Context, platform string) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countProxiesByPlatform, platform)
 	var count int64
 	err := row.Scan(&count)
@@ -50,23 +50,13 @@ func (q *Queries) CreateProxy(ctx context.Context, arg CreateProxyParams) error 
 }
 
 const createProxyList = `-- name: CreateProxyList :one
-INSERT INTO proxy_lists (name, platform) VALUES ($1, $2) RETURNING id, name, created_at, platform
+INSERT INTO proxy_lists (name) VALUES ($1) RETURNING id, name, created_at
 `
 
-type CreateProxyListParams struct {
-	Name     string         `json:"name"`
-	Platform sql.NullString `json:"platform"`
-}
-
-func (q *Queries) CreateProxyList(ctx context.Context, arg CreateProxyListParams) (ProxyList, error) {
-	row := q.db.QueryRowContext(ctx, createProxyList, arg.Name, arg.Platform)
+func (q *Queries) CreateProxyList(ctx context.Context, name string) (ProxyList, error) {
+	row := q.db.QueryRowContext(ctx, createProxyList, name)
 	var i ProxyList
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.CreatedAt,
-		&i.Platform,
-	)
+	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
 	return i, err
 }
 
@@ -88,11 +78,20 @@ func (q *Queries) DeleteProxyList(ctx context.Context, id int32) error {
 	return err
 }
 
-const getPlatformsByProxyListID = `-- name: GetPlatformsByProxyListID :many
-SELECT DISTINCT t.platform FROM tasks t WHERE t.proxy_list_id = $1
+const deleteProxyListPlatforms = `-- name: DeleteProxyListPlatforms :exec
+DELETE FROM proxy_list_platforms WHERE proxy_list_id = $1
 `
 
-func (q *Queries) GetPlatformsByProxyListID(ctx context.Context, proxyListID sql.NullInt32) ([]string, error) {
+func (q *Queries) DeleteProxyListPlatforms(ctx context.Context, proxyListID int32) error {
+	_, err := q.db.ExecContext(ctx, deleteProxyListPlatforms, proxyListID)
+	return err
+}
+
+const getPlatformsByProxyListID = `-- name: GetPlatformsByProxyListID :many
+SELECT platform FROM proxy_list_platforms WHERE proxy_list_id = $1
+`
+
+func (q *Queries) GetPlatformsByProxyListID(ctx context.Context, proxyListID int32) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, getPlatformsByProxyListID, proxyListID)
 	if err != nil {
 		return nil, err
@@ -152,24 +151,22 @@ func (q *Queries) GetProxiesByListID(ctx context.Context, proxyListID int32) ([]
 }
 
 const getProxyListByPlatform = `-- name: GetProxyListByPlatform :one
-SELECT id, name, created_at, platform FROM proxy_lists WHERE platform = $1 LIMIT 1
+SELECT pl.id, pl.name, pl.created_at FROM proxy_lists pl
+JOIN proxy_list_platforms plp ON plp.proxy_list_id = pl.id
+WHERE plp.platform = $1
+LIMIT 1
 `
 
-func (q *Queries) GetProxyListByPlatform(ctx context.Context, platform sql.NullString) (ProxyList, error) {
+func (q *Queries) GetProxyListByPlatform(ctx context.Context, platform string) (ProxyList, error) {
 	row := q.db.QueryRowContext(ctx, getProxyListByPlatform, platform)
 	var i ProxyList
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.CreatedAt,
-		&i.Platform,
-	)
+	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
 	return i, err
 }
 
 const getProxyLists = `-- name: GetProxyLists :many
 SELECT
-  pl.id, pl.name, pl.platform, pl.created_at,
+  pl.id, pl.name, pl.created_at,
   COALESCE(pc.proxy_count, 0)::int AS proxy_count
 FROM proxy_lists pl
 LEFT JOIN (
@@ -179,11 +176,10 @@ ORDER BY pl.created_at DESC
 `
 
 type GetProxyListsRow struct {
-	ID         int32          `json:"id"`
-	Name       string         `json:"name"`
-	Platform   sql.NullString `json:"platform"`
-	CreatedAt  time.Time      `json:"created_at"`
-	ProxyCount int32          `json:"proxy_count"`
+	ID         int32     `json:"id"`
+	Name       string    `json:"name"`
+	CreatedAt  time.Time `json:"created_at"`
+	ProxyCount int32     `json:"proxy_count"`
 }
 
 func (q *Queries) GetProxyLists(ctx context.Context) ([]GetProxyListsRow, error) {
@@ -198,7 +194,6 @@ func (q *Queries) GetProxyLists(ctx context.Context) ([]GetProxyListsRow, error)
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
-			&i.Platform,
 			&i.CreatedAt,
 			&i.ProxyCount,
 		); err != nil {
@@ -213,6 +208,22 @@ func (q *Queries) GetProxyLists(ctx context.Context) ([]GetProxyListsRow, error)
 		return nil, err
 	}
 	return items, nil
+}
+
+const setProxyListPlatform = `-- name: SetProxyListPlatform :exec
+INSERT INTO proxy_list_platforms (proxy_list_id, platform)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type SetProxyListPlatformParams struct {
+	ProxyListID int32  `json:"proxy_list_id"`
+	Platform    string `json:"platform"`
+}
+
+func (q *Queries) SetProxyListPlatform(ctx context.Context, arg SetProxyListPlatformParams) error {
+	_, err := q.db.ExecContext(ctx, setProxyListPlatform, arg.ProxyListID, arg.Platform)
+	return err
 }
 
 const updateProxyListName = `-- name: UpdateProxyListName :exec

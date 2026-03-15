@@ -367,6 +367,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type proxyListView struct {
+	database.GetProxyListsRow
+	Platforms []string
+}
+
 func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 	lists, err := s.queries.GetProxyLists(r.Context())
 	if err != nil {
@@ -374,9 +379,18 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var views []proxyListView
+	for _, l := range lists {
+		platforms, err := s.queries.GetPlatformsByProxyListID(r.Context(), l.ID)
+		if err != nil {
+			platforms = nil
+		}
+		views = append(views, proxyListView{GetProxyListsRow: l, Platforms: platforms})
+	}
+
 	user, _ := userFromContext(r.Context())
 	data := map[string]any{
-		"ProxyLists": lists,
+		"ProxyLists": views,
 		"ActivePage": "proxies",
 		"User":       user,
 		"IsAdmin":    user.Role == "admin",
@@ -410,14 +424,19 @@ func (s *Server) handleCreateProxyList(w http.ResponseWriter, r *http.Request) {
 
 	qtx := s.queries.WithTx(tx)
 
-	platform := strings.TrimSpace(r.FormValue("platform"))
-	list, err := qtx.CreateProxyList(r.Context(), database.CreateProxyListParams{
-		Name:     name,
-		Platform: nullStr(platform),
-	})
+	list, err := qtx.CreateProxyList(r.Context(), name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Set platforms (multiple via checkboxes)
+	selectedPlatforms := r.Form["platforms"]
+	for _, p := range selectedPlatforms {
+		qtx.SetProxyListPlatform(r.Context(), database.SetProxyListPlatformParams{
+			ProxyListID: list.ID,
+			Platform:    p,
+		})
 	}
 
 	if err := insertProxiesFromText(r.Context(), qtx, list.ID, proxiesRaw); err != nil {
@@ -473,9 +492,16 @@ func (s *Server) handleEditProxyListForm(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	listPlatforms, _ := s.queries.GetPlatformsByProxyListID(r.Context(), int32(id))
+	platformSet := make(map[string]bool)
+	for _, p := range listPlatforms {
+		platformSet[p] = true
+	}
+
 	data := map[string]any{
-		"List":        list,
-		"ProxiesText": strings.Join(lines, "\n"),
+		"List":          list,
+		"ProxiesText":   strings.Join(lines, "\n"),
+		"PlatformSet":   platformSet,
 	}
 
 	if err := s.templates["proxies"].ExecuteTemplate(w, "edit-modal", data); err != nil {
@@ -528,6 +554,15 @@ func (s *Server) handleUpdateProxyList(w http.ResponseWriter, r *http.Request) {
 	if err := insertProxiesFromText(r.Context(), qtx, int32(id), proxiesRaw); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Update platforms
+	qtx.DeleteProxyListPlatforms(r.Context(), int32(id))
+	for _, p := range r.Form["platforms"] {
+		qtx.SetProxyListPlatform(r.Context(), database.SetProxyListPlatformParams{
+			ProxyListID: int32(id),
+			Platform:    p,
+		})
 	}
 
 	if err := tx.Commit(); err != nil {

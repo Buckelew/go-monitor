@@ -292,7 +292,7 @@ func (s *Server) autoCreateTask(ctx context.Context, rawURL string) (database.Ta
 		return database.Task{}, fmt.Errorf("count tasks: %w", err)
 	}
 
-	proxyCount, err := s.queries.CountProxiesByPlatform(ctx, sql.NullString{String: string(platform), Valid: true})
+	proxyCount, err := s.queries.CountProxiesByPlatform(ctx, string(platform))
 	if err != nil {
 		return database.Task{}, fmt.Errorf("count proxies: %w", err)
 	}
@@ -308,7 +308,7 @@ func (s *Server) autoCreateTask(ctx context.Context, rawURL string) (database.Ta
 
 	// Look up proxy list for this platform
 	var proxyListID sql.NullInt32
-	proxyList, err := s.queries.GetProxyListByPlatform(ctx, sql.NullString{String: string(platform), Valid: true})
+	proxyList, err := s.queries.GetProxyListByPlatform(ctx, string(platform))
 	if err == nil {
 		proxyListID = sql.NullInt32{Int32: proxyList.ID, Valid: true}
 	}

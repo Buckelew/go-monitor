@@ -4,7 +4,7 @@ WHERE proxy_list_id = $1;
 
 -- name: GetProxyLists :many
 SELECT
-  pl.id, pl.name, pl.platform, pl.created_at,
+  pl.id, pl.name, pl.created_at,
   COALESCE(pc.proxy_count, 0)::int AS proxy_count
 FROM proxy_lists pl
 LEFT JOIN (
@@ -13,7 +13,7 @@ LEFT JOIN (
 ORDER BY pl.created_at DESC;
 
 -- name: CreateProxyList :one
-INSERT INTO proxy_lists (name, platform) VALUES ($1, $2) RETURNING *;
+INSERT INTO proxy_lists (name) VALUES ($1) RETURNING *;
 
 -- name: DeleteProxyList :exec
 DELETE FROM proxy_lists WHERE id = $1;
@@ -29,13 +29,24 @@ VALUES ($1, $2, $3, $4, $5);
 DELETE FROM proxies WHERE proxy_list_id = $1;
 
 -- name: GetPlatformsByProxyListID :many
-SELECT DISTINCT t.platform FROM tasks t WHERE t.proxy_list_id = $1;
+SELECT platform FROM proxy_list_platforms WHERE proxy_list_id = $1;
+
+-- name: SetProxyListPlatform :exec
+INSERT INTO proxy_list_platforms (proxy_list_id, platform)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING;
+
+-- name: DeleteProxyListPlatforms :exec
+DELETE FROM proxy_list_platforms WHERE proxy_list_id = $1;
 
 -- name: CountProxiesByPlatform :one
 SELECT COUNT(DISTINCT p.id)
 FROM proxies p
-JOIN proxy_lists pl ON pl.id = p.proxy_list_id
-WHERE pl.platform = $1;
+JOIN proxy_list_platforms plp ON plp.proxy_list_id = p.proxy_list_id
+WHERE plp.platform = $1;
 
 -- name: GetProxyListByPlatform :one
-SELECT * FROM proxy_lists WHERE platform = $1 LIMIT 1;
+SELECT pl.* FROM proxy_lists pl
+JOIN proxy_list_platforms plp ON plp.proxy_list_id = pl.id
+WHERE plp.platform = $1
+LIMIT 1;

@@ -763,6 +763,28 @@ body {
     min-width: 200px;
 }
 
+/* ── Checkbox Group ─────────────────────────────────── */
+
+.checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--text-2);
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    accent-color: var(--text-1);
+}
+
 /* ── Empty State Hero ───────────────────────────────── */
 
 .empty-state-hero {

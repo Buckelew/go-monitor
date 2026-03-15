@@ -53,10 +53,14 @@ type Proxy struct {
 }
 
 type ProxyList struct {
-	ID        int32          `json:"id"`
-	Name      string         `json:"name"`
-	CreatedAt time.Time      `json:"created_at"`
-	Platform  sql.NullString `json:"platform"`
+	ID        int32     `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type ProxyListPlatform struct {
+	ProxyListID int32  `json:"proxy_list_id"`
+	Platform    string `json:"platform"`
 }
 
 type Session struct {

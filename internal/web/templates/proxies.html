@@ -27,8 +27,8 @@
                 <td class="cell-name">{{.Name}}</td>
                 <td class="cell-num">{{.ProxyCount}}</td>
                 <td>
-                    {{if .Platform.Valid}}
-                        <span class="platform-badge platform-{{.Platform.String}}">{{.Platform.String}}</span>
+                    {{range .Platforms}}
+                        <span class="platform-badge platform-{{.}}">{{.}}</span>
                     {{else}}
                         <span class="cell-muted">none</span>
                     {{end}}
@@ -78,14 +78,14 @@
                     <input type="text" name="name" class="form-input" placeholder="e.g. US Residential" required>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Platform</label>
-                    <select name="platform" class="form-input">
-                        <option value="">None</option>
-                        <option value="shopify">Shopify</option>
-                        <option value="bigcartel">Big Cartel</option>
-                        <option value="squarespace">Squarespace</option>
-                        <option value="reddit">Reddit</option>
-                    </select>
+                    <label class="form-label">Platforms</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="shopify"> Shopify</label>
+                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="bigcartel"> Big Cartel</label>
+                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="squarespace"> Squarespace</label>
+                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="reddit"> Reddit</label>
+                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="target"> Target</label>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Proxies</label>
@@ -125,6 +125,16 @@
         <div class="form-group">
             <label class="form-label">List Name</label>
             <input type="text" name="name" class="form-input" value="{{.List.Name}}" required>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Platforms</label>
+            <div class="checkbox-group">
+                <label class="checkbox-label"><input type="checkbox" name="platforms" value="shopify" {{if index .PlatformSet "shopify"}}checked{{end}}> Shopify</label>
+                <label class="checkbox-label"><input type="checkbox" name="platforms" value="bigcartel" {{if index .PlatformSet "bigcartel"}}checked{{end}}> Big Cartel</label>
+                <label class="checkbox-label"><input type="checkbox" name="platforms" value="squarespace" {{if index .PlatformSet "squarespace"}}checked{{end}}> Squarespace</label>
+                <label class="checkbox-label"><input type="checkbox" name="platforms" value="reddit" {{if index .PlatformSet "reddit"}}checked{{end}}> Reddit</label>
+                <label class="checkbox-label"><input type="checkbox" name="platforms" value="target" {{if index .PlatformSet "target"}}checked{{end}}> Target</label>
+            </div>
         </div>
         <div class="form-group">
             <label class="form-label">Proxies</label>
