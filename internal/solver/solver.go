@@ -11,14 +11,15 @@ import (
 const defaultBaseURL = "https://tools.pacificaio.com"
 
 type Client struct {
-	baseURL string
+	baseURL  string
+	apiToken string
 }
 
-func New(baseURL string) *Client {
+func New(baseURL string, apiToken string) *Client {
 	if baseURL == "" {
 		baseURL = defaultBaseURL
 	}
-	return &Client{baseURL: baseURL}
+	return &Client{baseURL: baseURL, apiToken: apiToken}
 }
 
 type solveRequest struct {
