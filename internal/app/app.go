@@ -38,16 +38,6 @@ func Run(cfg *config.Config) {
 	}
 	defer db.Close()
 
-	// Web dashboard
-	webServer := web.NewServer(queries, db, cfg.API.SessionSecret)
-	go func() {
-		addr := fmt.Sprintf(":%d", cfg.Web.Port)
-		log.Printf("web dashboard: http://localhost%s", addr)
-		if err := http.ListenAndServe(addr, webServer); err != nil && err != http.ErrServerClosed {
-			log.Printf("web server error: %v", err)
-		}
-	}()
-
 	// Discord bot
 	bot, err := discord.NewBot(cfg.Discord.Token)
 	if err != nil {
@@ -67,6 +57,16 @@ func Run(cfg *config.Config) {
 	// Discord hub subscriber — bridges hub events to Discord notifications
 	discordSub := discord.NewHubSubscriber(eventHub, notifier, queries)
 	go discordSub.Run(ctx)
+
+	// Web dashboard
+	webServer := web.NewServer(queries, db, cfg.API.SessionSecret, bot, cfg.Discord.ClientID)
+	go func() {
+		addr := fmt.Sprintf(":%d", cfg.Web.Port)
+		log.Printf("web dashboard: http://localhost%s", addr)
+		if err := http.ListenAndServe(addr, webServer); err != nil && err != http.ErrServerClosed {
+			log.Printf("web server error: %v", err)
+		}
+	}()
 
 	// Build initial tasks
 	dbTasks, err := queries.GetTasks(ctx)

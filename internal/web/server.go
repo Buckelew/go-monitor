@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/buckelew/go-monitor/internal/database"
+	"github.com/buckelew/go-monitor/internal/discord"
 )
 
 //go:embed templates static
@@ -27,12 +28,14 @@ const userContextKey contextKey = "user"
 type Server struct {
 	queries       *database.Queries
 	db            *sql.DB
+	bot           *discord.Bot
+	clientID      string
 	sessionSecret []byte
 	templates     map[string]*template.Template
 	mux           *http.ServeMux
 }
 
-func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string) *Server {
+func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string, bot *discord.Bot, clientID string) *Server {
 	funcMap := template.FuncMap{
 		"formatDelay":    formatDelay,
 		"timeAgo":        timeAgo,
@@ -54,6 +57,8 @@ func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string) *Ser
 	s := &Server{
 		queries:       queries,
 		db:            db,
+		bot:           bot,
+		clientID:      clientID,
 		sessionSecret: []byte(sessionSecret),
 		templates:     templates,
 		mux:           http.NewServeMux(),
@@ -71,6 +76,10 @@ func (s *Server) routes() {
 
 	// User dashboard (any authenticated user)
 	s.mux.HandleFunc("GET /dashboard", s.requireAuth(s.handleDashboard))
+
+	// User dashboard actions
+	s.mux.HandleFunc("POST /dashboard/subscriptions", s.requireAuth(s.handleCreateSubscription))
+	s.mux.HandleFunc("DELETE /dashboard/subscriptions/{id}", s.requireAuth(s.handleDeleteSubscription))
 
 	// Admin routes
 	s.mux.HandleFunc("GET /tasks", s.requireAdmin(s.handleTasks))

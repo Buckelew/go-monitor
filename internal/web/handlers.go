@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -32,6 +33,13 @@ func nullInt32(s string) sql.NullInt32 {
 	return sql.NullInt32{Int32: int32(v), Valid: true}
 }
 
+type subscriptionView struct {
+	Sub          database.TaskSubscription
+	TaskURL      string
+	TaskPlatform string
+	ChannelName  string
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	user, _ := userFromContext(r.Context())
 
@@ -54,12 +62,39 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		selectedServer = &servers[0]
 	}
 
-	// Get subscriptions for selected server
-	var subs []database.TaskSubscription
+	// Get subscriptions for selected server, enriched with task info
+	var subViews []subscriptionView
 	if selectedServer != nil {
-		subs, err = s.queries.GetSubscriptionsByGuildIDs(r.Context(), []string{selectedServer.GuildID})
+		subs, err := s.queries.GetSubscriptionsByGuildIDs(r.Context(), []string{selectedServer.GuildID})
 		if err != nil {
 			log.Printf("failed to get subscriptions: %v", err)
+		}
+		for _, sub := range subs {
+			sv := subscriptionView{Sub: sub, ChannelName: sub.ChannelID}
+			task, err := s.queries.GetTask(r.Context(), sub.TaskID)
+			if err == nil {
+				sv.TaskURL = task.Url
+				sv.TaskPlatform = task.Platform
+			}
+			subViews = append(subViews, sv)
+		}
+	}
+
+	// Get guild channels for the modal dropdown
+	type channelInfo struct {
+		ID   string
+		Name string
+	}
+	var channels []channelInfo
+	if selectedServer != nil && s.bot != nil {
+		guildChannels, err := s.bot.Session().GuildChannels(selectedServer.GuildID)
+		if err == nil {
+			for _, ch := range guildChannels {
+				// Only text channels (type 0)
+				if ch.Type == 0 {
+					channels = append(channels, channelInfo{ID: ch.ID, Name: "#" + ch.Name})
+				}
+			}
 		}
 	}
 
@@ -68,13 +103,105 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"User":           user,
 		"Servers":        servers,
 		"SelectedServer": selectedServer,
-		"Subscriptions":  subs,
+		"Subscriptions":  subViews,
+		"Channels":       channels,
+		"ClientID":       s.clientID,
 		"IsAdmin":        user.Role == "admin",
 	}
 
 	if err := s.templates["dashboard"].ExecuteTemplate(w, "layout", data); err != nil {
 		log.Printf("template error: %v", err)
 	}
+}
+
+func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	url := strings.TrimSpace(r.FormValue("url"))
+	channelID := r.FormValue("channel_id")
+	guildID := r.FormValue("guild_id")
+	mode := r.FormValue("mode")
+
+	if url == "" || channelID == "" || guildID == "" || mode == "" {
+		http.Error(w, "all fields are required", http.StatusBadRequest)
+		return
+	}
+
+	// Look up or auto-create task
+	dbTask, err := s.queries.GetTaskByURL(r.Context(), url)
+	if err != nil {
+		// Auto-detect platform and create task
+		platform, err := detectPlatformFromURL(url)
+		if err != nil {
+			http.Error(w, "unsupported platform", http.StatusBadRequest)
+			return
+		}
+		dbTask, err = s.queries.CreateTask(r.Context(), database.CreateTaskParams{
+			Platform: platform,
+			TaskType: "search",
+			Url:      url,
+			Delay:    5000,
+		})
+		if err != nil {
+			log.Printf("failed to create task: %v", err)
+			http.Error(w, "failed to create task", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Create subscription
+	guildIDNull := sql.NullString{String: guildID, Valid: true}
+	switch mode {
+	case "all", "new":
+		_, err = s.queries.CreateStoreSubscription(r.Context(), database.CreateStoreSubscriptionParams{
+			TaskID: dbTask.ID, ChannelID: channelID, Mode: mode, GuildID: guildIDNull,
+		})
+	default:
+		http.Error(w, "invalid mode", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		log.Printf("failed to create subscription: %v", err)
+		http.Error(w, "failed to create subscription", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/dashboard?server="+guildID, http.StatusSeeOther)
+}
+
+func (s *Server) handleDeleteSubscription(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 32)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.queries.DeleteSubscription(r.Context(), int32(id)); err != nil {
+		http.Error(w, "failed to delete", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func detectPlatformFromURL(rawURL string) (string, error) {
+	host := strings.ToLower(rawURL)
+	if strings.Contains(host, ".myshopify.com") {
+		return "shopify", nil
+	}
+	if strings.Contains(host, ".bigcartel.com") {
+		return "bigcartel", nil
+	}
+	if strings.Contains(host, ".squarespace.com") {
+		return "squarespace", nil
+	}
+	if strings.Contains(host, "reddit.com/r/") {
+		return "reddit", nil
+	}
+	return "", fmt.Errorf("unsupported platform")
 }
 
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {

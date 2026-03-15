@@ -1,64 +1,165 @@
 {{define "content"}}
-<div class="page-header">
-    <div>
-        <h1 class="page-title">Dashboard</h1>
-        <p class="page-subtitle">Your subscriptions</p>
-    </div>
-    {{if .Servers}}
-    <div class="server-picker">
-        <select class="form-input" onchange="window.location.href='/dashboard?server='+this.value">
-            {{range .Servers}}
-            <option value="{{.GuildID}}" {{if $.SelectedServer}}{{if eq .GuildID $.SelectedServer.GuildID}}selected{{end}}{{end}}>
-                {{if .GuildName}}{{.GuildName}}{{else}}{{.GuildID}}{{end}}
-            </option>
-            {{end}}
-        </select>
-    </div>
-    {{end}}
-</div>
-
 {{if not .Servers}}
-<div class="empty-state">
-    <p class="empty-title">No servers registered</p>
-    <p class="empty-subtitle">Register a Discord server via the API to start creating subscriptions.</p>
-</div>
-{{else if not .Subscriptions}}
-<div class="empty-state">
-    <p class="empty-title">No subscriptions</p>
-    <p class="empty-subtitle">This server has no active subscriptions yet.</p>
+{{/* ── Empty State: No servers ── */}}
+<div class="empty-state-hero">
+    <div class="empty-state-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#5865F2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </div>
+    <h2 class="empty-hero-title">Get started with go-monitor</h2>
+    <p class="empty-hero-subtitle">Add the bot to a Discord server to start monitoring products and receiving notifications.</p>
+    <a href="https://discord.com/oauth2/authorize?client_id={{.ClientID}}&permissions=2048&scope=bot" target="_blank" class="btn btn-discord">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/></svg>
+        Add Bot to Server
+    </a>
 </div>
 {{else}}
+{{/* ── Dashboard with subscriptions ── */}}
+<div class="page-header">
+    <div>
+        <div class="breadcrumb-server" onclick="document.getElementById('server-dropdown').classList.toggle('open')">
+            <span class="breadcrumb-server-name">{{if .SelectedServer}}{{if .SelectedServer.GuildName}}{{.SelectedServer.GuildName}}{{else}}{{.SelectedServer.GuildID}}{{end}}{{end}}</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            <div id="server-dropdown" class="breadcrumb-dropdown">
+                {{range .Servers}}
+                <a href="/dashboard?server={{.GuildID}}" class="breadcrumb-dropdown-item{{if $.SelectedServer}}{{if eq .GuildID $.SelectedServer.GuildID}} active{{end}}{{end}}">
+                    {{if .GuildName}}{{.GuildName}}{{else}}{{.GuildID}}{{end}}
+                </a>
+                {{end}}
+                <div class="breadcrumb-dropdown-divider"></div>
+                <a href="https://discord.com/oauth2/authorize?client_id={{$.ClientID}}&permissions=2048&scope=bot" target="_blank" class="breadcrumb-dropdown-item breadcrumb-dropdown-add">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                    Add bot to a server
+                </a>
+            </div>
+        </div>
+        <h1 class="page-title">Subscriptions</h1>
+    </div>
+    <button class="btn btn-primary" onclick="document.getElementById('add-modal').classList.add('open')">
+        + Add Subscription
+    </button>
+</div>
+
+{{if .Subscriptions}}
 <div class="table-wrapper">
     <table class="table">
         <thead>
             <tr>
+                <th>URL</th>
                 <th>Channel</th>
                 <th>Mode</th>
-                <th>Task</th>
-                <th>Item</th>
+                <th>Platform</th>
                 <th>Created</th>
+                <th class="th-actions">Actions</th>
             </tr>
         </thead>
         <tbody>
             {{range .Subscriptions}}
-            <tr>
-                <td><code>{{.ChannelID}}</code></td>
-                <td>
-                    <span class="mode-badge mode-{{.Mode}}">{{.Mode}}</span>
+            <tr id="sub-{{.Sub.ID}}">
+                <td>{{.TaskURL}}</td>
+                <td><code>{{.ChannelName}}</code></td>
+                <td><span class="mode-badge mode-{{.Sub.Mode}}">{{.Sub.Mode}}</span></td>
+                <td><span class="platform-badge platform-{{.TaskPlatform}}">{{.TaskPlatform}}</span></td>
+                <td class="cell-muted">{{.Sub.CreatedAt.Format "Jan 02, 2006"}}</td>
+                <td class="cell-actions">
+                    <button class="btn-icon btn-delete"
+                            hx-delete="/dashboard/subscriptions/{{.Sub.ID}}?server={{$.SelectedServer.GuildID}}"
+                            hx-target="#sub-{{.Sub.ID}}"
+                            hx-swap="outerHTML swap:200ms"
+                            hx-confirm="Delete this subscription?">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
                 </td>
-                <td>{{.TaskID}}</td>
-                <td>
-                    {{if .ItemID.Valid}}
-                        {{.ItemID.Int32}}
-                    {{else}}
-                        <span class="cell-muted">-</span>
-                    {{end}}
-                </td>
-                <td class="cell-muted">{{.CreatedAt.Format "Jan 02, 2006"}}</td>
             </tr>
             {{end}}
         </tbody>
     </table>
 </div>
+{{else}}
+<div class="empty-state">
+    <p class="empty-title">No subscriptions</p>
+    <p class="empty-subtitle">Add a subscription to start receiving notifications in this server.</p>
+</div>
 {{end}}
+
+{{/* ── Add Subscription Modal ── */}}
+<div id="add-modal" class="modal-overlay" onclick="if(event.target===this) this.classList.remove('open')">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 class="modal-title">Add Subscription</h2>
+            <button class="btn-icon" onclick="document.getElementById('add-modal').classList.remove('open')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <form method="POST" action="/dashboard/subscriptions">
+            <input type="hidden" name="guild_id" value="{{if .SelectedServer}}{{.SelectedServer.GuildID}}{{end}}">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">URL</label>
+                    <input type="url" name="url" class="form-input" placeholder="https://example.myshopify.com" required
+                           oninput="detectPlatform(this.value)">
+                    <p id="platform-detect" class="form-hint"></p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Channel</label>
+                    <select name="channel_id" class="form-input" required>
+                        <option value="">Select a channel</option>
+                        {{range .Channels}}
+                        <option value="{{.ID}}">{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Mode</label>
+                    <div class="mode-selector">
+                        <label class="mode-option">
+                            <input type="radio" name="mode" value="all" checked>
+                            <span class="mode-option-label">All Events</span>
+                        </label>
+                        <label class="mode-option">
+                            <input type="radio" name="mode" value="new">
+                            <span class="mode-option-label">New Only</span>
+                        </label>
+                        <label class="mode-option">
+                            <input type="radio" name="mode" value="restock">
+                            <span class="mode-option-label">Restock</span>
+                        </label>
+                    </div>
+                    <p class="form-hint">All Events: new products, restocks, and delistings</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('add-modal').classList.remove('open')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+{{end}}
+
+<script>
+function detectPlatform(url) {
+    const el = document.getElementById('platform-detect');
+    if (!url) { el.textContent = ''; return; }
+    try {
+        const host = new URL(url).hostname.toLowerCase();
+        let platform = '';
+        if (host.endsWith('.myshopify.com')) platform = 'Shopify';
+        else if (host.endsWith('.bigcartel.com')) platform = 'Big Cartel';
+        else if (host.endsWith('.squarespace.com')) platform = 'Squarespace';
+        else if (host === 'reddit.com' || host === 'www.reddit.com') platform = 'Reddit';
+        if (platform) {
+            el.innerHTML = '<span style="color:#059669">&#10003; Detected: ' + platform + '</span>';
+        } else {
+            el.innerHTML = '<span style="color:#DC2626">Platform not supported</span>';
+        }
+    } catch(e) {
+        el.textContent = '';
+    }
+}
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.breadcrumb-server')) {
+        document.getElementById('server-dropdown')?.classList.remove('open');
+    }
+});
+</script>
 {{end}}

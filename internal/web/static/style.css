@@ -763,6 +763,180 @@ body {
     min-width: 200px;
 }
 
+/* ── Empty State Hero ───────────────────────────────── */
+
+.empty-state-hero {
+    text-align: center;
+    padding: 120px 20px 80px;
+    max-width: 420px;
+    margin: 0 auto;
+}
+
+.empty-state-icon {
+    margin-bottom: 24px;
+}
+
+.empty-hero-title {
+    font-family: var(--font-heading);
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-1);
+    margin-bottom: 8px;
+}
+
+.empty-hero-subtitle {
+    font-size: 14px;
+    color: var(--text-3);
+    line-height: 1.5;
+    margin-bottom: 28px;
+}
+
+.btn-discord {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: #5865F2;
+    color: #FFFFFF;
+    font-family: var(--font-ui);
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    border-radius: var(--radius-btn);
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s ease;
+}
+
+.btn-discord:hover {
+    background: #4752C4;
+}
+
+/* ── Breadcrumb Server Picker ───────────────────────── */
+
+.breadcrumb-server {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    position: relative;
+    padding: 2px 0;
+    margin-bottom: 2px;
+}
+
+.breadcrumb-server-name {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-3);
+}
+
+.breadcrumb-server:hover .breadcrumb-server-name {
+    color: var(--text-2);
+}
+
+.breadcrumb-server svg {
+    color: var(--text-4);
+}
+
+.breadcrumb-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 220px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    z-index: 100;
+    padding: 4px;
+}
+
+.breadcrumb-dropdown.open {
+    display: block;
+}
+
+.breadcrumb-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--text-2);
+    text-decoration: none;
+    border-radius: 6px;
+    transition: background 0.1s ease;
+}
+
+.breadcrumb-dropdown-item:hover {
+    background: var(--bg-hover);
+}
+
+.breadcrumb-dropdown-item.active {
+    font-weight: 500;
+    color: var(--text-1);
+    background: var(--bg-hover);
+}
+
+.breadcrumb-dropdown-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+}
+
+.breadcrumb-dropdown-add {
+    color: var(--text-3);
+    font-size: 12px;
+}
+
+.breadcrumb-dropdown-add svg {
+    color: var(--text-4);
+}
+
+/* ── Mode Selector (radio buttons) ──────────────────── */
+
+.mode-selector {
+    display: flex;
+    gap: 8px;
+}
+
+.mode-option {
+    flex: 1;
+    cursor: pointer;
+}
+
+.mode-option input[type="radio"] {
+    display: none;
+}
+
+.mode-option-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-2);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-btn);
+    transition: all 0.15s ease;
+}
+
+.mode-option input[type="radio"]:checked + .mode-option-label {
+    background: var(--text-1);
+    color: #FFFFFF;
+    border-color: var(--text-1);
+}
+
+.mode-option-label:hover {
+    border-color: #9CA3AF;
+}
+
 /* ── HTMX transitions ───────────────────────────────── */
 
 tr.htmx-swapping {
