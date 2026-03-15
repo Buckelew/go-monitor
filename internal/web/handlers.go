@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -42,6 +43,10 @@ type subscriptionView struct {
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	user, _ := userFromContext(r.Context())
+
+	// Auto-sync: fetch user's guilds from Discord, register any where
+	// user has MANAGE_GUILD and bot is present
+	s.syncUserServers(r.Context(), user)
 
 	servers, err := s.queries.GetUserServers(r.Context(), user.ID)
 	if err != nil {
@@ -185,6 +190,54 @@ func (s *Server) handleDeleteSubscription(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// syncUserServers fetches the user's Discord guilds and auto-registers
+// any where the user has MANAGE_GUILD and the bot is present.
+func (s *Server) syncUserServers(ctx context.Context, user database.DiscordUser) {
+	const manageGuild = 0x20
+
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://discord.com/api/users/@me/guilds", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+user.AccessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("[sync] failed to fetch guilds for user %d: %v", user.ID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	var guilds []struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Permissions int64  `json:"permissions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&guilds); err != nil {
+		return
+	}
+
+	for _, g := range guilds {
+		if g.Permissions&manageGuild == 0 {
+			continue
+		}
+		// Check if bot is in this guild
+		_, err := s.bot.Session().Guild(g.ID)
+		if err != nil {
+			continue
+		}
+		s.queries.CreateUserServer(ctx, database.CreateUserServerParams{
+			DiscordUserID: user.ID,
+			GuildID:       g.ID,
+			GuildName:     g.Name,
+		})
+	}
 }
 
 func detectPlatformFromURL(rawURL string) (string, error) {
