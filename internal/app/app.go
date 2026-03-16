@@ -100,12 +100,7 @@ func Run(cfg *config.Config) {
 		}
 	}()
 
-	if len(initialTasks) == 0 {
-		log.Println("no enabled tasks found, servers still running")
-		<-ctx.Done()
-	} else {
-		log.Printf("starting scheduler with %d task(s)", len(initialTasks))
-		scheduler.Start(ctx, initialTasks)
-	}
+	log.Printf("starting scheduler with %d task(s)", len(initialTasks))
+	scheduler.Start(ctx, initialTasks)
 	log.Println("shutdown complete")
 }

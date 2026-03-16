@@ -31,7 +31,6 @@
             <tr>
                 <th>Platform</th>
                 <th>URL</th>
-                <th class="th-delay">Delay</th>
                 <th>Last Run</th>
                 <th>Status</th>
                 <th class="th-num">Subs</th>
@@ -44,7 +43,6 @@
             <tr>
                 <td><span class="platform-badge platform-{{.Platform}}">{{.Platform}}</span></td>
                 <td class="cell-url"><span class="url-text">{{.Url}}</span></td>
-                <td class="cell-delay"><code>{{formatDelay .Delay}}</code></td>
                 <td class="cell-muted">{{timeAgo .LastRunAt}}</td>
                 <td>
                     {{if eq .LastRunStatus ""}}

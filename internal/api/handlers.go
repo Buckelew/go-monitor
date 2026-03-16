@@ -287,25 +287,6 @@ func (s *Server) autoCreateTask(ctx context.Context, rawURL string) (database.Ta
 		taskType = monitor.ATC
 	}
 
-	taskCount, err := s.queries.CountTasksByPlatform(ctx, string(platform))
-	if err != nil {
-		return database.Task{}, fmt.Errorf("count tasks: %w", err)
-	}
-
-	proxyCount, err := s.queries.CountProxiesByPlatform(ctx, string(platform))
-	if err != nil {
-		return database.Task{}, fmt.Errorf("count proxies: %w", err)
-	}
-
-	denominator := proxyCount
-	if denominator < 1 {
-		denominator = 1
-	}
-	delay := int32((taskCount / denominator) * 3000)
-	if delay < 5000 {
-		delay = 5000
-	}
-
 	// Look up proxy list for this platform
 	var proxyListID sql.NullInt32
 	proxyList, err := s.queries.GetProxyListByPlatform(ctx, string(platform))
@@ -317,7 +298,7 @@ func (s *Server) autoCreateTask(ctx context.Context, rawURL string) (database.Ta
 		Platform:    string(platform),
 		TaskType:    string(taskType),
 		Url:         rawURL,
-		Delay:       delay,
+		Delay:       0,
 		ProxyListID: proxyListID,
 	})
 	if err != nil {

@@ -180,7 +180,7 @@ func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request
 			Platform: string(platform),
 			TaskType: taskType,
 			Url:      taskURL,
-			Delay:    5000,
+			Delay:    0,
 		})
 		if err != nil {
 			log.Printf("failed to create task: %v", err)

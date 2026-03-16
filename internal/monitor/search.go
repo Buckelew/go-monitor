@@ -26,7 +26,6 @@ type ScraperWithClient interface {
 type SearchTask struct {
 	id           int32
 	scraper      Scraper
-	delay        int32
 	isEnabled    bool
 	queries      *database.Queries
 	proxyListID  sql.NullInt32
@@ -37,7 +36,6 @@ type SearchTask struct {
 func (s *SearchTask) ID() int32          { return s.id }
 func (s *SearchTask) Platform() Platform { return s.scraper.Platform() }
 func (s *SearchTask) Type() TaskType     { return Search }
-func (s *SearchTask) Delay() int32       { return s.delay }
 func (s *SearchTask) IsEnabled() bool    { return s.isEnabled }
 
 func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
@@ -199,7 +197,6 @@ func NewSearchTask(queries database.Queries, scraper Scraper, task database.Task
 	return &SearchTask{
 		id:          task.ID,
 		scraper:     scraper,
-		delay:       task.Delay,
 		isEnabled:   task.Enabled,
 		queries:     &queries,
 		proxyListID: task.ProxyListID,

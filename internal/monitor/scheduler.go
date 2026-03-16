@@ -11,104 +11,271 @@ import (
 	"github.com/buckelew/go-monitor/internal/hub"
 )
 
+const (
+	minTickInterval  = 100 * time.Millisecond // floor regardless of proxy count
+	defaultInterval  = 3 * time.Second        // when platform has 0 proxies
+	minCycleTime     = 5 * time.Second        // no task runs more often than this
+	proxyRefreshFreq = 30 * time.Second       // how often to re-query proxy count
+)
+
 type Scheduler struct {
 	mu      sync.Mutex
-	tasks   map[int32]context.CancelFunc
+	runners map[Platform]*platformRunner
 	queries database.Queries
 	hub     *hub.Hub
 	wg      sync.WaitGroup
+	addCh   chan Task
 }
 
 func NewScheduler(queries *database.Queries, hub *hub.Hub) *Scheduler {
 	return &Scheduler{
-		tasks:   make(map[int32]context.CancelFunc),
+		runners: make(map[Platform]*platformRunner),
 		queries: *queries,
 		hub:     hub,
+		addCh:   make(chan Task, 64),
 	}
 }
 
-// Start launches goroutines for each initial task and blocks until ctx is
-// cancelled, then waits for all goroutines to finish.
+// Start launches platform runners for initial tasks and blocks until ctx is
+// cancelled. New tasks arriving via AddTask are routed to the correct runner.
 func (s *Scheduler) Start(ctx context.Context, initialTasks []Task) {
-	for _, task := range initialTasks {
-		s.addTask(ctx, task)
+	byPlatform := make(map[Platform][]Task)
+	for _, t := range initialTasks {
+		byPlatform[t.Platform()] = append(byPlatform[t.Platform()], t)
 	}
-	<-ctx.Done()
-	s.wg.Wait()
+
+	s.mu.Lock()
+	for p, tasks := range byPlatform {
+		r := s.newRunner(p, tasks)
+		s.runners[p] = r
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			r.run(ctx)
+		}()
+	}
+	s.mu.Unlock()
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.wg.Wait()
+			return
+		case task := <-s.addCh:
+			s.routeTask(ctx, task)
+		}
+	}
 }
 
-// AddTask adds a new task to the running scheduler. Safe for concurrent use.
+// AddTask adds a task to the running scheduler. Safe for concurrent use.
 func (s *Scheduler) AddTask(ctx context.Context, task Task) {
-	s.addTask(ctx, task)
+	select {
+	case s.addCh <- task:
+	case <-ctx.Done():
+	}
 }
 
-func (s *Scheduler) addTask(ctx context.Context, task Task) {
+func (s *Scheduler) routeTask(ctx context.Context, task Task) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, exists := s.tasks[task.ID()]; exists {
+	p := task.Platform()
+	if r, ok := s.runners[p]; ok {
+		r.addTask(task)
 		return
 	}
 
-	taskCtx, cancel := context.WithCancel(ctx)
-	s.tasks[task.ID()] = cancel
-
+	r := s.newRunner(p, []Task{task})
+	s.runners[p] = r
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		s.runTask(taskCtx, task)
+		r.run(ctx)
 	}()
 }
 
-func (s *Scheduler) runTask(ctx context.Context, task Task) {
-	ticker := time.NewTicker(time.Duration(task.Delay()) * time.Millisecond)
-	defer ticker.Stop()
+func (s *Scheduler) newRunner(p Platform, tasks []Task) *platformRunner {
+	return &platformRunner{
+		platform: p,
+		tasks:    tasks,
+		lastRun:  make(map[int32]time.Time),
+		queries:  s.queries,
+		hub:      s.hub,
+		wg:       &s.wg,
+	}
+}
 
-	// Immediately start task
-	s.executeTask(ctx, task)
+// platformRunner drives round-robin execution for a single platform.
+type platformRunner struct {
+	platform   Platform
+	mu         sync.RWMutex
+	tasks      []Task
+	cursor     int
+	lastRun    map[int32]time.Time
+	proxyCount int64
+	ticker     *time.Ticker
+	sem        chan struct{}
+	queries    database.Queries
+	hub        *hub.Hub
+	wg         *sync.WaitGroup
+}
+
+func (r *platformRunner) addTask(task Task) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, t := range r.tasks {
+		if t.ID() == task.ID() {
+			return
+		}
+	}
+	r.tasks = append(r.tasks, task)
+}
+
+func (r *platformRunner) tickInterval() time.Duration {
+	r.mu.RLock()
+	pc := r.proxyCount
+	r.mu.RUnlock()
+
+	if pc <= 0 {
+		return defaultInterval
+	}
+	d := time.Duration(float64(time.Second) / float64(pc))
+	if d < minTickInterval {
+		return minTickInterval
+	}
+	return d
+}
+
+func (r *platformRunner) refreshProxyCount(ctx context.Context) {
+	count, err := r.queries.CountProxiesByPlatform(ctx, string(r.platform))
+	if err != nil {
+		log.Printf("[%s] failed to refresh proxy count: %v", r.platform, err)
+		return
+	}
+	r.mu.Lock()
+	r.proxyCount = count
+	r.mu.Unlock()
+}
+
+func (r *platformRunner) updateSem() {
+	r.mu.RLock()
+	pc := r.proxyCount
+	r.mu.RUnlock()
+	if pc < 1 {
+		pc = 1
+	}
+	r.sem = make(chan struct{}, pc)
+}
+
+func (r *platformRunner) run(ctx context.Context) {
+	r.refreshProxyCount(ctx)
+	r.updateSem()
+
+	interval := r.tickInterval()
+	r.ticker = time.NewTicker(interval)
+	defer r.ticker.Stop()
+
+	proxyRefresh := time.NewTicker(proxyRefreshFreq)
+	defer proxyRefresh.Stop()
+
+	log.Printf("[%s] runner started: %d tasks, %d proxies, tick=%v",
+		r.platform, len(r.tasks), r.proxyCount, interval)
+
+	// Immediate first execution
+	r.tick(ctx)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			s.executeTask(ctx, task)
+		case <-r.ticker.C:
+			r.tick(ctx)
+		case <-proxyRefresh.C:
+			old := r.tickInterval()
+			r.refreshProxyCount(ctx)
+			r.updateSem()
+			if nw := r.tickInterval(); nw != old {
+				r.ticker.Reset(nw)
+				log.Printf("[%s] tick interval: %v -> %v (%d proxies)",
+					r.platform, old, nw, r.proxyCount)
+			}
 		}
 	}
 }
 
-func (s *Scheduler) executeTask(ctx context.Context, task Task) {
-	taskRun, err := s.queries.InsertTaskRun(ctx, task.ID())
+// tick finds the next eligible task and fires it in a goroutine.
+func (r *platformRunner) tick(ctx context.Context) {
+	task := r.nextEligible()
+	if task == nil {
+		return
+	}
+
+	select {
+	case r.sem <- struct{}{}:
+	default:
+		return // all slots busy
+	}
+
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		defer func() { <-r.sem }()
+		r.executeTask(ctx, task)
+	}()
+}
+
+// nextEligible advances the cursor to find a task that hasn't run within
+// minCycleTime. Returns nil if all tasks ran recently.
+func (r *platformRunner) nextEligible() Task {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	n := len(r.tasks)
+	for attempts := 0; attempts < n; attempts++ {
+		idx := r.cursor % n
+		task := r.tasks[idx]
+		r.cursor = (idx + 1) % n
+
+		if time.Since(r.lastRun[task.ID()]) >= minCycleTime {
+			r.lastRun[task.ID()] = time.Now()
+			return task
+		}
+	}
+	return nil
+}
+
+func (r *platformRunner) executeTask(ctx context.Context, task Task) {
+	taskRun, err := r.queries.InsertTaskRun(ctx, task.ID())
 	if err != nil {
 		log.Printf("[task %d] failed to insert task run: %v", task.ID(), err)
 		return
 	}
 
-	isFirst, err := s.isFirstRun(ctx, task.ID())
+	isFirst, err := r.isFirstRun(ctx, task.ID())
 	if err != nil {
 		log.Printf("[task %d] failed to check first run: %v", task.ID(), err)
-		s.completeTaskRun(ctx, taskRun.ID, "error", err.Error())
+		r.completeTaskRun(ctx, taskRun.ID, "error", err.Error())
 		return
 	}
 
 	result, err := task.Run(ctx)
 	if err != nil {
 		log.Printf("[task %d] run failed: %v", task.ID(), err)
-		s.completeTaskRun(ctx, taskRun.ID, "error", err.Error())
+		r.completeTaskRun(ctx, taskRun.ID, "error", err.Error())
 		return
 	}
 
-	s.completeTaskRun(ctx, taskRun.ID, "completed", "")
+	r.completeTaskRun(ctx, taskRun.ID, "completed", "")
 
 	if !isFirst && len(result.Events) > 0 {
 		for _, event := range result.Events {
 			log.Printf("[task %d] %s: %s", task.ID(), event.Type, event.Item.Title)
-			s.hub.Publish(hub.Event{TaskID: task.ID(), Data: event})
+			r.hub.Publish(hub.Event{TaskID: task.ID(), Data: event})
 		}
 	}
 }
 
-func (s *Scheduler) completeTaskRun(ctx context.Context, runID int32, status string, errMsg string) {
+func (r *platformRunner) completeTaskRun(ctx context.Context, runID int32, status string, errMsg string) {
 	params := database.CompleteTaskRunParams{
 		ID:     runID,
 		Status: status,
@@ -116,21 +283,17 @@ func (s *Scheduler) completeTaskRun(ctx context.Context, runID int32, status str
 	if errMsg != "" {
 		params.ErrorMessage = sql.NullString{String: errMsg, Valid: true}
 	}
-	if err := s.queries.CompleteTaskRun(ctx, params); err != nil {
+	if err := r.queries.CompleteTaskRun(ctx, params); err != nil {
 		log.Printf("[run %d] failed to complete task run: %v", runID, err)
 	}
 }
 
-// Checks task_runs to determine first run
-func (s *Scheduler) isFirstRun(ctx context.Context, taskID int32) (bool, error) {
-	taskRuns, err := s.queries.GetCompletedTaskRuns(ctx, taskID)
+func (r *platformRunner) isFirstRun(ctx context.Context, taskID int32) (bool, error) {
+	taskRuns, err := r.queries.GetCompletedTaskRuns(ctx, taskID)
 	if err != nil {
 		return false, err
 	}
-	if len(taskRuns) == 0 {
-		return true, nil
-	}
-	return false, nil
+	return len(taskRuns) == 0, nil
 }
 
 // ShouldNotify determines whether a subscription should receive a given event.

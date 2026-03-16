@@ -25,7 +25,6 @@ type ATCTask struct {
 	id          int32
 	tcin        string
 	url         string
-	delay       int32
 	isEnabled   bool
 	client      *httpclient.Client
 	solver      *solver.Client
@@ -38,7 +37,6 @@ func NewATCTask(queries database.Queries, client *httpclient.Client, solver *sol
 		id:        task.ID,
 		tcin:      tcin,
 		url:       fmt.Sprintf("https://www.target.com/p/-/A-%s", tcin),
-		delay:     task.Delay,
 		isEnabled: task.Enabled,
 		client:    client,
 		solver:    solver,
@@ -46,11 +44,10 @@ func NewATCTask(queries database.Queries, client *httpclient.Client, solver *sol
 	}
 }
 
-func (t *ATCTask) ID() int32              { return t.id }
+func (t *ATCTask) ID() int32                  { return t.id }
 func (t *ATCTask) Platform() monitor.Platform { return monitor.Target }
-func (t *ATCTask) Type() monitor.TaskType  { return monitor.ATC }
-func (t *ATCTask) Delay() int32            { return t.delay }
-func (t *ATCTask) IsEnabled() bool         { return t.isEnabled }
+func (t *ATCTask) Type() monitor.TaskType     { return monitor.ATC }
+func (t *ATCTask) IsEnabled() bool            { return t.isEnabled }
 
 func (t *ATCTask) Run(ctx context.Context) (*monitor.TaskResult, error) {
 	if err := t.client.RotateProxy(); err != nil {

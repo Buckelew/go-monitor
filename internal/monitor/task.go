@@ -64,6 +64,5 @@ type Task interface {
 	Platform() Platform
 	Type() TaskType
 	Run(ctx context.Context) (*TaskResult, error)
-	Delay() int32
 	IsEnabled() bool
 }
