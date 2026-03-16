@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,42 @@ import (
 	"github.com/buckelew/go-monitor/internal/database"
 	"github.com/buckelew/go-monitor/internal/monitor"
 )
+
+func sortTasks(tasks []database.GetTasksWithStatsRow, col, dir string) {
+	if col == "" {
+		return
+	}
+	sort.SliceStable(tasks, func(i, j int) bool {
+		var less bool
+		switch col {
+		case "platform":
+			less = tasks[i].Platform < tasks[j].Platform
+		case "url":
+			less = tasks[i].Url < tasks[j].Url
+		case "last_run":
+			ti, tj := tasks[i].LastRunAt, tasks[j].LastRunAt
+			if !ti.Valid {
+				less = true
+			} else if !tj.Valid {
+				less = false
+			} else {
+				less = ti.Time.Before(tj.Time)
+			}
+		case "status":
+			less = tasks[i].LastRunStatus < tasks[j].LastRunStatus
+		case "subs":
+			less = tasks[i].SubCount < tasks[j].SubCount
+		case "items":
+			less = tasks[i].ItemCount < tasks[j].ItemCount
+		default:
+			return false
+		}
+		if dir == "desc" {
+			return !less
+		}
+		return less
+	})
+}
 
 var platforms = []string{"shopify", "bigcartel", "squarespace", "reddit"}
 
@@ -311,6 +348,11 @@ func (s *Server) syncUserServers(ctx context.Context, user database.DiscordUser)
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 	platform := r.URL.Query().Get("platform")
 	urlSearch := r.URL.Query().Get("url")
+	sortCol := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("dir")
+	if sortDir != "asc" && sortDir != "desc" {
+		sortDir = "asc"
+	}
 
 	tasks, err := s.queries.GetTasksWithStats(r.Context(), database.GetTasksWithStatsParams{
 		Platform:  nullStr(platform),
@@ -321,6 +363,8 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sortTasks(tasks, sortCol, sortDir)
+
 	user, _ := userFromContext(r.Context())
 	data := map[string]any{
 		"Tasks":      tasks,
@@ -328,6 +372,8 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 		"Platforms":  platforms,
 		"User":       user,
 		"IsAdmin":    user.Role == "admin",
+		"Sort":       sortCol,
+		"Dir":        sortDir,
 		"Filter": map[string]string{
 			"Platform": platform,
 			"URL":      urlSearch,

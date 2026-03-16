@@ -961,18 +961,22 @@ body {
 
 /* ── Sortable Headers ───────────────────────────────── */
 
-th[data-sort] {
-    cursor: pointer;
-    user-select: none;
+.th-sort {
     position: relative;
     padding-right: 24px;
 }
 
-th[data-sort]:hover {
+.th-sort a {
+    color: inherit;
+    text-decoration: none;
+    display: block;
+}
+
+.th-sort a:hover {
     color: var(--text-1);
 }
 
-th[data-sort]::after {
+.th-sort::after {
     content: '';
     position: absolute;
     right: 8px;
@@ -983,13 +987,13 @@ th[data-sort]::after {
     margin-top: 2px;
 }
 
-th[data-sort].sort-asc::after {
+.th-sort.sort-asc::after {
     border-top-color: transparent;
     border-bottom-color: var(--text-2);
     margin-top: -6px;
 }
 
-th[data-sort].sort-desc::after {
+.th-sort.sort-desc::after {
     border-top-color: var(--text-2);
     margin-top: 2px;
 }

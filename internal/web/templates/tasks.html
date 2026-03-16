@@ -29,12 +29,25 @@
     <table class="table">
         <thead>
             <tr>
-                <th data-sort="text">Platform</th>
-                <th data-sort="text">URL</th>
-                <th data-sort="value">Last Run</th>
-                <th data-sort="text">Status</th>
-                <th data-sort="number" class="th-num">Subs</th>
-                <th data-sort="number" class="th-num">Items</th>
+                {{$p := index .Filter "Platform"}}{{$u := index .Filter "URL"}}{{$s := .Sort}}{{$d := .Dir}}
+                <th class="th-sort{{if eq $s "platform"}} sort-{{$d}}{{end}}">
+                    <a href="/tasks?sort=platform&dir={{if and (eq $s "platform") (eq $d "asc")}}desc{{else}}asc{{end}}&platform={{$p}}&url={{$u}}">Platform</a>
+                </th>
+                <th class="th-sort{{if eq $s "url"}} sort-{{$d}}{{end}}">
+                    <a href="/tasks?sort=url&dir={{if and (eq $s "url") (eq $d "asc")}}desc{{else}}asc{{end}}&platform={{$p}}&url={{$u}}">URL</a>
+                </th>
+                <th class="th-sort{{if eq $s "last_run"}} sort-{{$d}}{{end}}">
+                    <a href="/tasks?sort=last_run&dir={{if and (eq $s "last_run") (eq $d "asc")}}desc{{else}}asc{{end}}&platform={{$p}}&url={{$u}}">Last Run</a>
+                </th>
+                <th class="th-sort{{if eq $s "status"}} sort-{{$d}}{{end}}">
+                    <a href="/tasks?sort=status&dir={{if and (eq $s "status") (eq $d "asc")}}desc{{else}}asc{{end}}&platform={{$p}}&url={{$u}}">Status</a>
+                </th>
+                <th class="th-sort th-num{{if eq $s "subs"}} sort-{{$d}}{{end}}">
+                    <a href="/tasks?sort=subs&dir={{if and (eq $s "subs") (eq $d "asc")}}desc{{else}}asc{{end}}&platform={{$p}}&url={{$u}}">Subs</a>
+                </th>
+                <th class="th-sort th-num{{if eq $s "items"}} sort-{{$d}}{{end}}">
+                    <a href="/tasks?sort=items&dir={{if and (eq $s "items") (eq $d "asc")}}desc{{else}}asc{{end}}&platform={{$p}}&url={{$u}}">Items</a>
+                </th>
                 <th class="th-act"></th>
             </tr>
         </thead>
@@ -43,7 +56,7 @@
             <tr>
                 <td><span class="platform-badge platform-{{.Platform}}">{{.Platform}}</span></td>
                 <td class="cell-url"><span class="url-text">{{.Url}}</span></td>
-                <td class="cell-muted" data-sort-value="{{rawTime .LastRunAt}}">{{timeAgo .LastRunAt}}</td>
+                <td class="cell-muted">{{timeAgo .LastRunAt}}</td>
                 <td>
                     {{if eq .LastRunStatus ""}}
                         <span class="status-badge status-none">Pending</span>
