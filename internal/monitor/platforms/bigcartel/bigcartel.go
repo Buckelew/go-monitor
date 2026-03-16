@@ -15,17 +15,22 @@ func productsURL(storeURL, apiBase string) (string, error) {
 		return "", fmt.Errorf("invalid store URL: %w", err)
 	}
 
-	// Extract subdomain from e.g. "coolshop.bigcartel.com"
-	parts := strings.Split(u.Hostname(), ".")
-	if len(parts) == 0 {
-		return "", fmt.Errorf("could not extract subdomain from %s", storeURL)
-	}
-	subdomain := parts[0]
-
+	// For test overrides, extract subdomain and use the test base.
 	if apiBase != "" {
+		parts := strings.Split(u.Hostname(), ".")
+		subdomain := parts[0]
 		return fmt.Sprintf("%s/%s/products.json", strings.TrimRight(apiBase, "/"), subdomain), nil
 	}
-	return fmt.Sprintf("https://api.bigcartel.com/%s/products.json", subdomain), nil
+
+	// For *.bigcartel.com domains, use the API with the subdomain.
+	host := u.Hostname()
+	if strings.HasSuffix(host, ".bigcartel.com") {
+		subdomain := strings.TrimSuffix(host, ".bigcartel.com")
+		return fmt.Sprintf("https://api.bigcartel.com/%s/products.json", subdomain), nil
+	}
+
+	// Custom domains serve the products JSON directly.
+	return fmt.Sprintf("%s/products.json", strings.TrimRight(storeURL, "/")), nil
 }
 
 func parseItems(data []byte, storeURL string) ([]monitor.Item, error) {
