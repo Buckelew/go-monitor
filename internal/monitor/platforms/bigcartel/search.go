@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	http "github.com/bogdanfinn/fhttp"
 
@@ -23,7 +24,7 @@ func (s *SearchBigCartel) Platform() monitor.Platform {
 
 func (s *SearchBigCartel) Client() *httpclient.Client { return s.client }
 
-func (s *SearchBigCartel) FetchProducts(ctx context.Context) ([]monitor.Item, error) {
+func (s *SearchBigCartel) FetchProducts(ctx context.Context) (*monitor.FetchResult, error) {
 	apiURL, err := productsURL(s.URL, s.baseURL)
 	if err != nil {
 		return nil, err
@@ -38,7 +39,9 @@ func (s *SearchBigCartel) FetchProducts(ctx context.Context) ([]monitor.Item, er
 		return nil, err
 	}
 
+	start := time.Now()
 	resp, err := s.client.Inner().Do(req)
+	duration := time.Since(start)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +59,20 @@ func (s *SearchBigCartel) FetchProducts(ctx context.Context) ([]monitor.Item, er
 		return nil, err
 	}
 
-	return parseItems(body, s.URL)
+	items, err := parseItems(body, s.URL)
+	if err != nil {
+		return nil, err
+	}
+
+	return &monitor.FetchResult{
+		Items: items,
+		Meta: monitor.FetchMeta{
+			StatusCode:  resp.StatusCode,
+			Duration:    duration,
+			BodySize:    len(body),
+			Proxy:       s.client.CurrentProxyRaw(),
+		},
+	}, nil
 }
 
 func NewSearchBigCartel(URL string, client *httpclient.Client, opts ...*monitor.Opts) *SearchBigCartel {

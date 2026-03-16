@@ -12,7 +12,7 @@ import (
 )
 
 const getCompletedTaskRuns = `-- name: GetCompletedTaskRuns :many
-SELECT id, task_id, started_at, completed_at, status, error_message FROM task_runs
+SELECT id, task_id, started_at, completed_at, status, error_message, status_code, response_time_ms, cache_status FROM task_runs
 WHERE status = 'completed' AND task_id = $1
 `
 
@@ -32,6 +32,9 @@ func (q *Queries) GetCompletedTaskRuns(ctx context.Context, taskID int32) ([]Tas
 			&i.CompletedAt,
 			&i.Status,
 			&i.ErrorMessage,
+			&i.StatusCode,
+			&i.ResponseTimeMs,
+			&i.CacheStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -50,7 +53,8 @@ const getRecentTaskRuns = `-- name: GetRecentTaskRuns :many
 SELECT
   tr.id, tr.started_at, tr.completed_at, tr.status, tr.error_message,
   t.platform, t.url, tr.task_id,
-  EXTRACT(EPOCH FROM (tr.completed_at - tr.started_at))::float AS duration_seconds
+  EXTRACT(EPOCH FROM (tr.completed_at - tr.started_at))::float AS duration_seconds,
+  tr.status_code, tr.response_time_ms, tr.cache_status
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id
 WHERE tr.status IN ('completed', 'error')
@@ -80,6 +84,9 @@ type GetRecentTaskRunsRow struct {
 	Url             string         `json:"url"`
 	TaskID          int32          `json:"task_id"`
 	DurationSeconds float64        `json:"duration_seconds"`
+	StatusCode      sql.NullInt32  `json:"status_code"`
+	ResponseTimeMs  sql.NullInt32  `json:"response_time_ms"`
+	CacheStatus     sql.NullString `json:"cache_status"`
 }
 
 func (q *Queries) GetRecentTaskRuns(ctx context.Context, arg GetRecentTaskRunsParams) ([]GetRecentTaskRunsRow, error) {
@@ -107,6 +114,9 @@ func (q *Queries) GetRecentTaskRuns(ctx context.Context, arg GetRecentTaskRunsPa
 			&i.Url,
 			&i.TaskID,
 			&i.DurationSeconds,
+			&i.StatusCode,
+			&i.ResponseTimeMs,
+			&i.CacheStatus,
 		); err != nil {
 			return nil, err
 		}

@@ -6,7 +6,8 @@ WHERE status = 'completed' AND task_id = $1;
 SELECT
   tr.id, tr.started_at, tr.completed_at, tr.status, tr.error_message,
   t.platform, t.url, tr.task_id,
-  EXTRACT(EPOCH FROM (tr.completed_at - tr.started_at))::float AS duration_seconds
+  EXTRACT(EPOCH FROM (tr.completed_at - tr.started_at))::float AS duration_seconds,
+  tr.status_code, tr.response_time_ms, tr.cache_status
 FROM task_runs tr
 JOIN tasks t ON t.id = tr.task_id
 WHERE tr.status IN ('completed', 'error')

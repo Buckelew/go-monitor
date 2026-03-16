@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	http "github.com/bogdanfinn/fhttp"
 
@@ -23,14 +24,18 @@ func (s *SearchSquarespace) Platform() monitor.Platform {
 
 func (s *SearchSquarespace) Client() *httpclient.Client { return s.client }
 
-func (s *SearchSquarespace) FetchProducts(ctx context.Context) ([]monitor.Item, error) {
+func (s *SearchSquarespace) FetchProducts(ctx context.Context) (*monitor.FetchResult, error) {
 	var allItems []monitor.Item
+	var totalDuration time.Duration
+	var totalBodySize int
+	var lastProxy string
 	offset := 0
 
 	for {
 		if err := s.client.RotateProxy(); err != nil {
 			return nil, fmt.Errorf("failed to rotate proxy: %w", err)
 		}
+		lastProxy = s.client.CurrentProxyRaw()
 
 		url := productsURL(s.baseURL, offset)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -38,7 +43,9 @@ func (s *SearchSquarespace) FetchProducts(ctx context.Context) ([]monitor.Item, 
 			return nil, err
 		}
 
+		start := time.Now()
 		resp, err := s.client.Inner().Do(req)
+		totalDuration += time.Since(start)
 		if err != nil {
 			return nil, err
 		}
@@ -52,6 +59,7 @@ func (s *SearchSquarespace) FetchProducts(ctx context.Context) ([]monitor.Item, 
 		if err != nil {
 			return nil, err
 		}
+		totalBodySize += len(body)
 
 		items, err := parseItems(body, s.URL)
 		if err != nil {
@@ -66,7 +74,15 @@ func (s *SearchSquarespace) FetchProducts(ctx context.Context) ([]monitor.Item, 
 		offset = nextOffset
 	}
 
-	return allItems, nil
+	return &monitor.FetchResult{
+		Items: allItems,
+		Meta: monitor.FetchMeta{
+			StatusCode: 200,
+			Duration:   totalDuration,
+			BodySize:   totalBodySize,
+			Proxy:      lastProxy,
+		},
+	}, nil
 }
 
 func NewSearchSquarespace(URL string, client *httpclient.Client, opts ...*monitor.Opts) *SearchSquarespace {

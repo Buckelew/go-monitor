@@ -83,12 +83,15 @@ type Task struct {
 }
 
 type TaskRun struct {
-	ID           int32          `json:"id"`
-	TaskID       int32          `json:"task_id"`
-	StartedAt    time.Time      `json:"started_at"`
-	CompletedAt  sql.NullTime   `json:"completed_at"`
-	Status       string         `json:"status"`
-	ErrorMessage sql.NullString `json:"error_message"`
+	ID             int32          `json:"id"`
+	TaskID         int32          `json:"task_id"`
+	StartedAt      time.Time      `json:"started_at"`
+	CompletedAt    sql.NullTime   `json:"completed_at"`
+	Status         string         `json:"status"`
+	ErrorMessage   sql.NullString `json:"error_message"`
+	StatusCode     sql.NullInt32  `json:"status_code"`
+	ResponseTimeMs sql.NullInt32  `json:"response_time_ms"`
+	CacheStatus    sql.NullString `json:"cache_status"`
 }
 
 type TaskSubscription struct {

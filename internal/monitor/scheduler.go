@@ -254,18 +254,18 @@ func (r *platformRunner) executeTask(ctx context.Context, task Task) {
 	isFirst, err := r.isFirstRun(ctx, task.ID())
 	if err != nil {
 		log.Printf("[task %d] failed to check first run: %v", task.ID(), err)
-		r.completeTaskRun(ctx, taskRun.ID, "error", err.Error())
+		r.completeTaskRun(ctx, taskRun.ID, "error", err.Error(), nil)
 		return
 	}
 
 	result, err := task.Run(ctx)
 	if err != nil {
 		log.Printf("[task %d] run failed: %v", task.ID(), err)
-		r.completeTaskRun(ctx, taskRun.ID, "error", err.Error())
+		r.completeTaskRun(ctx, taskRun.ID, "error", err.Error(), nil)
 		return
 	}
 
-	r.completeTaskRun(ctx, taskRun.ID, "completed", "")
+	r.completeTaskRun(ctx, taskRun.ID, "completed", "", result.Meta)
 
 	if !isFirst && len(result.Events) > 0 {
 		for _, event := range result.Events {
@@ -275,13 +275,20 @@ func (r *platformRunner) executeTask(ctx context.Context, task Task) {
 	}
 }
 
-func (r *platformRunner) completeTaskRun(ctx context.Context, runID int32, status string, errMsg string) {
+func (r *platformRunner) completeTaskRun(ctx context.Context, runID int32, status string, errMsg string, meta *FetchMeta) {
 	params := database.CompleteTaskRunParams{
 		ID:     runID,
 		Status: status,
 	}
 	if errMsg != "" {
 		params.ErrorMessage = sql.NullString{String: errMsg, Valid: true}
+	}
+	if meta != nil {
+		params.StatusCode = sql.NullInt32{Int32: int32(meta.StatusCode), Valid: meta.StatusCode != 0}
+		params.ResponseTimeMs = sql.NullInt32{Int32: int32(meta.Duration.Milliseconds()), Valid: true}
+		if meta.CacheStatus != "" {
+			params.CacheStatus = sql.NullString{String: meta.CacheStatus, Valid: true}
+		}
 	}
 	if err := r.queries.CompleteTaskRun(ctx, params); err != nil {
 		log.Printf("[run %d] failed to complete task run: %v", runID, err)

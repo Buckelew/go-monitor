@@ -5,5 +5,6 @@ RETURNING *;
 
 -- name: CompleteTaskRun :exec
 UPDATE task_runs
-SET status = $2, completed_at = NOW(), error_message = $3
+SET status = $2, completed_at = NOW(), error_message = $3,
+    status_code = $4, response_time_ms = $5, cache_status = $6
 WHERE id = $1;

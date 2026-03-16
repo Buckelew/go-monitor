@@ -13,7 +13,7 @@ import (
 )
 
 type Scraper interface {
-	FetchProducts(ctx context.Context) ([]Item, error)
+	FetchProducts(ctx context.Context) (*FetchResult, error)
 	Platform() Platform
 }
 
@@ -44,7 +44,7 @@ func (s *SearchTask) IsEnabled() bool    { return s.isEnabled }
 func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 	s.maybeRefreshProxies(ctx)
 
-	items, err := s.scraper.FetchProducts(ctx)
+	fetched, err := s.scraper.FetchProducts(ctx)
 	if errors.Is(err, ErrPasswordPage) {
 		var events []ItemEvent
 		if !s.passwordPage {
@@ -61,6 +61,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 		return nil, err
 	}
 
+	meta := fetched.Meta
 	var events []ItemEvent
 
 	// Password came down
@@ -72,7 +73,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			Item: Item{URL: s.url, Title: "Password page down"},
 		})
 	}
-	for _, item := range items {
+	for _, item := range fetched.Items {
 		existing, err := s.queries.GetItemByTaskAndURL(ctx, database.GetItemByTaskAndURLParams{
 			TaskID: s.id,
 			Url:    item.URL,
@@ -141,8 +142,8 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 	}
 
 	// Delisting detection: any active DB item not in the scraped set is delisted
-	scrapedURLs := make(map[string]bool, len(items))
-	for _, item := range items {
+	scrapedURLs := make(map[string]bool, len(fetched.Items))
+	for _, item := range fetched.Items {
 		scrapedURLs[item.URL] = true
 	}
 
@@ -166,7 +167,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 		}
 	}
 
-	return &TaskResult{Success: true, Events: events}, nil
+	return &TaskResult{Success: true, Events: events, Meta: &meta}, nil
 }
 
 func (s *SearchTask) insertEvent(ctx context.Context, itemID int32, prevState, newState json.RawMessage) {

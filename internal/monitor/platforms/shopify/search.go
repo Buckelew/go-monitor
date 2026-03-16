@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync/atomic"
+	"time"
 
 	http "github.com/bogdanfinn/fhttp"
 
@@ -25,7 +26,7 @@ func (s *SearchShopify) Platform() monitor.Platform {
 
 func (s *SearchShopify) Client() *httpclient.Client { return s.client }
 
-func (s *SearchShopify) FetchProducts(ctx context.Context) ([]monitor.Item, error) {
+func (s *SearchShopify) FetchProducts(ctx context.Context) (*monitor.FetchResult, error) {
 	reqNum := s.requestNum.Add(1) - 1
 	url := productsURL(s.baseURL, reqNum)
 
@@ -38,7 +39,9 @@ func (s *SearchShopify) FetchProducts(ctx context.Context) ([]monitor.Item, erro
 		return nil, err
 	}
 
+	start := time.Now()
 	resp, err := s.client.Inner().Do(req)
+	duration := time.Since(start)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +64,23 @@ func (s *SearchShopify) FetchProducts(ctx context.Context) ([]monitor.Item, erro
 		return nil, err
 	}
 
-	return items, nil
+	return &monitor.FetchResult{
+		Items: items,
+		Meta: monitor.FetchMeta{
+			StatusCode:  resp.StatusCode,
+			CacheStatus: cacheStatus(resp),
+			Duration:    duration,
+			BodySize:    len(readBytes),
+			Proxy:       s.client.CurrentProxyRaw(),
+		},
+	}, nil
+}
+
+func cacheStatus(resp *http.Response) string {
+	if v := resp.Header.Get("X-Cache"); v != "" {
+		return v
+	}
+	return resp.Header.Get("Cf-Cache-Status")
 }
 
 func NewSearchShopify(URL string, client *httpclient.Client, opts ...*monitor.Opts) *SearchShopify {

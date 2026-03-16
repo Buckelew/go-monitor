@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	http "github.com/bogdanfinn/fhttp"
 
@@ -25,7 +26,7 @@ func (s *SearchReddit) Platform() monitor.Platform {
 
 func (s *SearchReddit) Client() *httpclient.Client { return s.client }
 
-func (s *SearchReddit) FetchProducts(ctx context.Context) ([]monitor.Item, error) {
+func (s *SearchReddit) FetchProducts(ctx context.Context) (*monitor.FetchResult, error) {
 	apiURL, err := postsURL(s.URL, s.baseURL)
 	if err != nil {
 		return nil, err
@@ -41,7 +42,9 @@ func (s *SearchReddit) FetchProducts(ctx context.Context) ([]monitor.Item, error
 	}
 	req.Header.Set("User-Agent", userAgent)
 
+	start := time.Now()
 	resp, err := s.client.Inner().Do(req)
+	duration := time.Since(start)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +59,20 @@ func (s *SearchReddit) FetchProducts(ctx context.Context) ([]monitor.Item, error
 		return nil, err
 	}
 
-	return parseItems(body)
+	items, err := parseItems(body)
+	if err != nil {
+		return nil, err
+	}
+
+	return &monitor.FetchResult{
+		Items: items,
+		Meta: monitor.FetchMeta{
+			StatusCode: resp.StatusCode,
+			Duration:   duration,
+			BodySize:   len(body),
+			Proxy:      s.client.CurrentProxyRaw(),
+		},
+	}, nil
 }
 
 func NewSearchReddit(URL string, client *httpclient.Client, opts ...*monitor.Opts) *SearchReddit {

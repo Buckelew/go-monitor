@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 type Platform string
@@ -57,9 +58,23 @@ type ItemEvent struct {
 	ItemID int32 // DB item ID, needed for product-level subscription matching
 }
 
+type FetchMeta struct {
+	StatusCode  int
+	CacheStatus string
+	Duration    time.Duration
+	BodySize    int
+	Proxy       string
+}
+
+type FetchResult struct {
+	Items []Item
+	Meta  FetchMeta
+}
+
 type TaskResult struct {
 	Success bool
 	Events  []ItemEvent
+	Meta    *FetchMeta
 }
 
 type Notifier interface {

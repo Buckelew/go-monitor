@@ -12,25 +12,32 @@ import (
 
 const completeTaskRun = `-- name: CompleteTaskRun :exec
 UPDATE task_runs
-SET status = $2, completed_at = NOW(), error_message = $3
+SET status = $2, completed_at = NOW(), error_message = $3,
+    status_code = $4, response_time_ms = $5, cache_status = $6
 WHERE id = $1
 `
 
 type CompleteTaskRunParams struct {
-	ID           int32          `json:"id"`
-	Status       string         `json:"status"`
-	ErrorMessage sql.NullString `json:"error_message"`
+	ID             int32          `json:"id"`
+	Status         string         `json:"status"`
+	ErrorMessage   sql.NullString `json:"error_message"`
+	StatusCode     sql.NullInt32  `json:"status_code"`
+	ResponseTimeMs sql.NullInt32  `json:"response_time_ms"`
+	CacheStatus    sql.NullString `json:"cache_status"`
 }
 
 func (q *Queries) CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams) error {
-	_, err := q.db.ExecContext(ctx, completeTaskRun, arg.ID, arg.Status, arg.ErrorMessage)
+	_, err := q.db.ExecContext(ctx, completeTaskRun,
+		arg.ID, arg.Status, arg.ErrorMessage,
+		arg.StatusCode, arg.ResponseTimeMs, arg.CacheStatus,
+	)
 	return err
 }
 
 const insertTaskRun = `-- name: InsertTaskRun :one
 INSERT INTO task_runs (task_id, started_at, status)
 VALUES ($1, NOW(), 'running')
-RETURNING id, task_id, started_at, completed_at, status, error_message
+RETURNING id, task_id, started_at, completed_at, status, error_message, status_code, response_time_ms, cache_status
 `
 
 func (q *Queries) InsertTaskRun(ctx context.Context, taskID int32) (TaskRun, error) {
@@ -43,6 +50,9 @@ func (q *Queries) InsertTaskRun(ctx context.Context, taskID int32) (TaskRun, err
 		&i.CompletedAt,
 		&i.Status,
 		&i.ErrorMessage,
+		&i.StatusCode,
+		&i.ResponseTimeMs,
+		&i.CacheStatus,
 	)
 	return i, err
 }
