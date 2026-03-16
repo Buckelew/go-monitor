@@ -13,8 +13,13 @@ import (
 )
 
 // DetectPlatform infers the monitoring platform from a URL's hostname first,
-// then probes the URL if hostname matching fails.
+// then probes the URL if hostname matching fails. A raw TCIN (all digits) is
+// detected as Target.
 func DetectPlatform(rawURL string) (Platform, error) {
+	if regexp.MustCompile(`^\d+$`).MatchString(rawURL) {
+		return Target, nil
+	}
+
 	platform, err := detectByHostname(rawURL)
 	if err == nil {
 		return platform, nil

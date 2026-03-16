@@ -93,8 +93,8 @@
             <input type="hidden" name="guild_id" value="{{if .SelectedServer}}{{.SelectedServer.GuildID}}{{end}}">
             <div class="modal-body">
                 <div class="form-group">
-                    <label class="form-label">URL</label>
-                    <input type="url" name="url" class="form-input" placeholder="https://example.myshopify.com" required
+                    <label class="form-label">URL or TCIN</label>
+                    <input type="text" name="url" class="form-input" placeholder="https://example.myshopify.com or 12345678" required
                            oninput="detectPlatform(this.value)">
                     <p id="platform-detect" class="form-hint"></p>
                 </div>
@@ -118,7 +118,7 @@
                             <input type="radio" name="mode" value="new">
                             <span class="mode-option-label">New Only</span>
                         </label>
-                        <label class="mode-option">
+                        <label class="mode-option" style="display:none">
                             <input type="radio" name="mode" value="restock">
                             <span class="mode-option-label">Restock</span>
                         </label>
@@ -137,24 +137,59 @@
 
 <script>
 let detectTimer;
-function detectPlatform(url) {
+function detectPlatform(val) {
     const el = document.getElementById('platform-detect');
-    if (!url) { el.textContent = ''; return; }
-    try { new URL(url); } catch(e) { el.textContent = ''; return; }
+    if (!val) { el.textContent = ''; setModeOptions(null); return; }
+    // Accept raw TCIN (digits) or valid URL
+    const isTCIN = /^\d+$/.test(val.trim());
+    if (!isTCIN) {
+        try { new URL(val); } catch(e) { el.textContent = ''; setModeOptions(null); return; }
+    }
     clearTimeout(detectTimer);
     el.innerHTML = '<span style="color:#9CA3AF">Detecting...</span>';
     detectTimer = setTimeout(function() {
-        fetch('/dashboard/detect-platform?url=' + encodeURIComponent(url))
+        fetch('/dashboard/detect-platform?url=' + encodeURIComponent(val.trim()))
             .then(r => r.json())
             .then(data => {
                 if (data.platform) {
                     el.innerHTML = '<span style="color:#059669">&#10003; Detected: ' + data.platform + '</span>';
+                    setModeOptions(data.platform);
                 } else {
                     el.innerHTML = '<span style="color:#DC2626">Platform not supported</span>';
+                    setModeOptions(null);
                 }
             })
-            .catch(() => { el.innerHTML = '<span style="color:#DC2626">Detection failed</span>'; });
+            .catch(() => { el.innerHTML = '<span style="color:#DC2626">Detection failed</span>'; setModeOptions(null); });
     }, 500);
+}
+function setModeOptions(platform) {
+    const opts = document.querySelectorAll('.mode-option');
+    const hint = document.querySelector('.mode-selector + .form-hint');
+    if (platform === 'target') {
+        opts.forEach(o => {
+            const radio = o.querySelector('input');
+            if (radio.value === 'restock') {
+                radio.checked = true;
+                o.style.display = '';
+            } else {
+                radio.checked = false;
+                o.style.display = 'none';
+            }
+        });
+        if (hint) hint.textContent = 'Monitors TCIN for restocks via ATC';
+    } else {
+        opts.forEach(o => {
+            const radio = o.querySelector('input');
+            if (radio.value === 'restock') {
+                radio.checked = false;
+                o.style.display = 'none';
+            } else {
+                o.style.display = '';
+            }
+            if (radio.value === 'all') radio.checked = true;
+        });
+        if (hint) hint.textContent = 'All Events: new products, restocks, and delistings';
+    }
 }
 document.addEventListener('click', function(e) {
     if (!e.target.closest('.breadcrumb-server')) {
