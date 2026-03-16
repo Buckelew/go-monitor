@@ -34,6 +34,7 @@ type SearchTask struct {
 	registry     *httpclient.ProxyRegistry
 	proxyVersion int64
 	passwordPage bool
+	seenSuccess  bool // true after first successful (non-password) fetch
 }
 
 func (s *SearchTask) ID() int32          { return s.id }
@@ -50,10 +51,12 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 		if !s.passwordPage {
 			s.passwordPage = true
 			log.Printf("[task %d] password page up: %s", s.id, s.url)
-			events = append(events, ItemEvent{
-				Type: EventPasswordUp,
-				Item: Item{URL: s.url, Title: "Password page up"},
-			})
+			if s.seenSuccess {
+				events = append(events, ItemEvent{
+					Type: EventPasswordUp,
+					Item: Item{URL: s.url, Title: "Password page up"},
+				})
+			}
 		}
 		return &TaskResult{Success: true, Events: events}, nil
 	}
@@ -61,6 +64,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 		return nil, err
 	}
 
+	s.seenSuccess = true
 	meta := fetched.Meta
 	var events []ItemEvent
 
