@@ -44,6 +44,9 @@ func (s *SearchShopify) FetchProducts(ctx context.Context) ([]monitor.Item, erro
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == 401 {
+		return nil, monitor.ErrPasswordPage
+	}
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, s.URL)
 	}

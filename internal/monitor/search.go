@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 
@@ -25,12 +26,14 @@ type ScraperWithClient interface {
 
 type SearchTask struct {
 	id           int32
+	url          string
 	scraper      Scraper
 	isEnabled    bool
 	queries      *database.Queries
 	proxyListID  sql.NullInt32
 	registry     *httpclient.ProxyRegistry
 	proxyVersion int64
+	passwordPage bool
 }
 
 func (s *SearchTask) ID() int32          { return s.id }
@@ -42,11 +45,33 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 	s.maybeRefreshProxies(ctx)
 
 	items, err := s.scraper.FetchProducts(ctx)
+	if errors.Is(err, ErrPasswordPage) {
+		var events []ItemEvent
+		if !s.passwordPage {
+			s.passwordPage = true
+			log.Printf("[task %d] password page up: %s", s.id, s.url)
+			events = append(events, ItemEvent{
+				Type: EventPasswordUp,
+				Item: Item{URL: s.url, Title: "Password page up"},
+			})
+		}
+		return &TaskResult{Success: true, Events: events}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 
 	var events []ItemEvent
+
+	// Password came down
+	if s.passwordPage {
+		s.passwordPage = false
+		log.Printf("[task %d] password page down: %s", s.id, s.url)
+		events = append(events, ItemEvent{
+			Type: EventPasswordDown,
+			Item: Item{URL: s.url, Title: "Password page down"},
+		})
+	}
 	for _, item := range items {
 		existing, err := s.queries.GetItemByTaskAndURL(ctx, database.GetItemByTaskAndURLParams{
 			TaskID: s.id,
@@ -198,6 +223,7 @@ func (s *SearchTask) maybeRefreshProxies(ctx context.Context) {
 func NewSearchTask(queries database.Queries, scraper Scraper, task database.Task, registry *httpclient.ProxyRegistry) *SearchTask {
 	return &SearchTask{
 		id:          task.ID,
+		url:         task.Url,
 		scraper:     scraper,
 		isEnabled:   task.Enabled,
 		queries:     &queries,

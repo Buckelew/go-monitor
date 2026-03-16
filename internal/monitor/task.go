@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
 
 type Platform string
@@ -39,10 +40,16 @@ type Item struct {
 type EventType string
 
 const (
-	EventNewProduct EventType = "new_product"
-	EventRestock    EventType = "restock"
-	EventDelisted   EventType = "delisted"
+	EventNewProduct   EventType = "new_product"
+	EventRestock      EventType = "restock"
+	EventDelisted     EventType = "delisted"
+	EventPasswordUp   EventType = "password_up"
+	EventPasswordDown EventType = "password_down"
 )
+
+// ErrPasswordPage is returned by scrapers when the store has a password page
+// (Shopify 401, BigCartel 403). The scheduler treats this as a non-error.
+var ErrPasswordPage = errors.New("password page")
 
 type ItemEvent struct {
 	Type   EventType
