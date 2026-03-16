@@ -3,6 +3,7 @@ package target
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,25 +23,30 @@ const (
 )
 
 type ATCTask struct {
-	id          int32
-	tcin        string
-	url         string
-	isEnabled   bool
-	client      *httpclient.Client
-	solver      *solver.Client
-	queries     *database.Queries
-	lastSuccess bool
+	id           int32
+	tcin         string
+	url          string
+	isEnabled    bool
+	client       *httpclient.Client
+	solver       *solver.Client
+	queries      *database.Queries
+	proxyListID  sql.NullInt32
+	registry     *httpclient.ProxyRegistry
+	proxyVersion int64
+	lastSuccess  bool
 }
 
-func NewATCTask(queries database.Queries, client *httpclient.Client, solver *solver.Client, tcin string, task database.Task) *ATCTask {
+func NewATCTask(queries database.Queries, client *httpclient.Client, solver *solver.Client, tcin string, task database.Task, registry *httpclient.ProxyRegistry) *ATCTask {
 	return &ATCTask{
-		id:        task.ID,
-		tcin:      tcin,
-		url:       fmt.Sprintf("https://www.target.com/p/-/A-%s", tcin),
-		isEnabled: task.Enabled,
-		client:    client,
-		solver:    solver,
-		queries:   &queries,
+		id:          task.ID,
+		tcin:        tcin,
+		url:         fmt.Sprintf("https://www.target.com/p/-/A-%s", tcin),
+		isEnabled:   task.Enabled,
+		client:      client,
+		solver:      solver,
+		queries:     &queries,
+		proxyListID: task.ProxyListID,
+		registry:    registry,
 	}
 }
 
@@ -50,6 +56,8 @@ func (t *ATCTask) Type() monitor.TaskType     { return monitor.ATC }
 func (t *ATCTask) IsEnabled() bool            { return t.isEnabled }
 
 func (t *ATCTask) Run(ctx context.Context) (*monitor.TaskResult, error) {
+	t.maybeRefreshProxies(ctx)
+
 	if err := t.client.RotateProxy(); err != nil {
 		return nil, fmt.Errorf("failed to rotate proxy: %w", err)
 	}
@@ -212,6 +220,39 @@ func (t *ATCTask) handleResult(ctx context.Context, success bool) []monitor.Item
 	}
 
 	return events
+}
+
+func (t *ATCTask) maybeRefreshProxies(ctx context.Context) {
+	if t.registry == nil || !t.proxyListID.Valid {
+		return
+	}
+
+	currentVersion := t.registry.Version(t.proxyListID.Int32)
+	if currentVersion == t.proxyVersion {
+		return
+	}
+
+	dbProxies, err := t.queries.GetProxiesByListID(ctx, t.proxyListID.Int32)
+	if err != nil {
+		log.Printf("[task %d] failed to reload proxies: %v", t.id, err)
+		return
+	}
+
+	var proxyURLs []string
+	for _, p := range dbProxies {
+		if p.Username.Valid && p.Username.String != "" {
+			proxyURLs = append(proxyURLs, fmt.Sprintf("http://%s:%s@%s:%s", p.Username.String, p.Password.String, p.Host, p.Port))
+		} else {
+			proxyURLs = append(proxyURLs, fmt.Sprintf("http://%s:%s", p.Host, p.Port))
+		}
+	}
+
+	if len(proxyURLs) > 0 {
+		t.client.SetRotator(httpclient.NewProxyRotator(proxyURLs))
+	}
+
+	t.proxyVersion = currentVersion
+	log.Printf("[task %d] proxies refreshed (version %d)", t.id, currentVersion)
 }
 
 func (t *ATCTask) insertEvent(ctx context.Context, itemID int32, prevState, newState json.RawMessage) {

@@ -49,7 +49,7 @@ func BuildTask(ctx context.Context, queries *database.Queries, dbTask database.T
 		if err != nil {
 			return nil, fmt.Errorf("extract TCIN for task %d: %w", dbTask.ID, err)
 		}
-		return target.NewATCTask(*queries, client, solverClient, tcin, dbTask), nil
+		return target.NewATCTask(*queries, client, solverClient, tcin, dbTask, proxyRegistry), nil
 	}
 
 	var scraper monitor.Scraper
