@@ -49,6 +49,7 @@ func NewServer(queries *database.Queries, db *sql.DB, sessionSecret string, bot 
 		"timeAgo":        timeAgo,
 		"formatDuration": formatDuration,
 		"formatTime":     formatTime,
+		"rawTime":        rawTime,
 	}
 
 	pages := []string{"tasks", "logs", "proxies", "dashboard"}
@@ -237,4 +238,11 @@ func formatTime(t sql.NullTime) string {
 		return "-"
 	}
 	return t.Time.Format("Jan 02 15:04:05")
+}
+
+func rawTime(t sql.NullTime) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.Format(time.RFC3339)
 }

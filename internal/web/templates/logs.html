@@ -41,11 +41,11 @@
     <table class="table">
         <thead>
             <tr>
-                <th class="th-time">Time</th>
-                <th>Task</th>
-                <th>Status</th>
-                <th class="th-duration">Duration</th>
-                <th>Error</th>
+                <th class="th-time" data-sort="value">Time</th>
+                <th data-sort="text">Task</th>
+                <th data-sort="text">Status</th>
+                <th class="th-duration" data-sort="number">Duration</th>
+                <th data-sort="text">Error</th>
             </tr>
         </thead>
         <tbody id="log-rows">
@@ -64,7 +64,7 @@
 {{define "log-items"}}
 {{range .Runs}}
 <tr class="log-row">
-    <td class="cell-muted">{{formatTime .CompletedAt}}</td>
+    <td class="cell-muted" data-sort-value="{{rawTime .CompletedAt}}">{{formatTime .CompletedAt}}</td>
     <td>
         <span class="platform-badge platform-{{.Platform}}">{{.Platform}}</span>
         <span class="log-url">{{.Url}}</span>
@@ -76,7 +76,7 @@
             <span class="status-badge status-error">Error</span>
         {{end}}
     </td>
-    <td class="cell-muted">{{formatDuration .DurationSeconds}}</td>
+    <td class="cell-muted" data-sort-value="{{.DurationSeconds}}">{{formatDuration .DurationSeconds}}</td>
     <td class="cell-error">{{if .ErrorMessage.Valid}}{{.ErrorMessage.String}}{{end}}</td>
 </tr>
 {{end}}

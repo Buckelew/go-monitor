@@ -29,12 +29,12 @@
     <table class="table">
         <thead>
             <tr>
-                <th>Platform</th>
-                <th>URL</th>
-                <th>Last Run</th>
-                <th>Status</th>
-                <th class="th-num">Subs</th>
-                <th class="th-num">Items</th>
+                <th data-sort="text">Platform</th>
+                <th data-sort="text">URL</th>
+                <th data-sort="value">Last Run</th>
+                <th data-sort="text">Status</th>
+                <th data-sort="number" class="th-num">Subs</th>
+                <th data-sort="number" class="th-num">Items</th>
                 <th class="th-act"></th>
             </tr>
         </thead>
@@ -43,7 +43,7 @@
             <tr>
                 <td><span class="platform-badge platform-{{.Platform}}">{{.Platform}}</span></td>
                 <td class="cell-url"><span class="url-text">{{.Url}}</span></td>
-                <td class="cell-muted">{{timeAgo .LastRunAt}}</td>
+                <td class="cell-muted" data-sort-value="{{rawTime .LastRunAt}}">{{timeAgo .LastRunAt}}</td>
                 <td>
                     {{if eq .LastRunStatus ""}}
                         <span class="status-badge status-none">Pending</span>
