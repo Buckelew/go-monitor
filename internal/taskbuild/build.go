@@ -35,6 +35,9 @@ func BuildTask(ctx context.Context, queries *database.Queries, dbTask database.T
 				}
 			}
 			rotator = httpclient.NewProxyRotator(proxyURLs)
+			if proxyRegistry != nil {
+				rotator = proxyRegistry.GetOrSetRotator(dbTask.ProxyListID.Int32, rotator)
+			}
 		}
 	}
 

@@ -186,7 +186,9 @@ func (s *SearchTask) maybeRefreshProxies(ctx context.Context) {
 	}
 
 	if len(proxyURLs) > 0 {
-		swc.Client().SetRotator(httpclient.NewProxyRotator(proxyURLs))
+		rotator := httpclient.NewProxyRotator(proxyURLs)
+		rotator = s.registry.GetOrSetRotator(s.proxyListID.Int32, rotator)
+		swc.Client().SetRotator(rotator)
 	}
 
 	s.proxyVersion = currentVersion

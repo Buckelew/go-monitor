@@ -248,7 +248,9 @@ func (t *ATCTask) maybeRefreshProxies(ctx context.Context) {
 	}
 
 	if len(proxyURLs) > 0 {
-		t.client.SetRotator(httpclient.NewProxyRotator(proxyURLs))
+		rotator := httpclient.NewProxyRotator(proxyURLs)
+		rotator = t.registry.GetOrSetRotator(t.proxyListID.Int32, rotator)
+		t.client.SetRotator(rotator)
 	}
 
 	t.proxyVersion = currentVersion
