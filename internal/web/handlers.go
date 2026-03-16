@@ -173,14 +173,22 @@ func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request
 		mode = "restock" // Target only supports restock
 	}
 
+	// Look up proxy list for this platform
+	var proxyListID sql.NullInt32
+	proxyList, plErr := s.queries.GetProxyListByPlatform(r.Context(), string(platform))
+	if plErr == nil {
+		proxyListID = sql.NullInt32{Int32: proxyList.ID, Valid: true}
+	}
+
 	// Look up or auto-create task
 	dbTask, err := s.queries.GetTaskByURL(r.Context(), taskURL)
 	if err != nil {
 		dbTask, err = s.queries.CreateTask(r.Context(), database.CreateTaskParams{
-			Platform: string(platform),
-			TaskType: taskType,
-			Url:      taskURL,
-			Delay:    0,
+			Platform:    string(platform),
+			TaskType:    taskType,
+			Url:         taskURL,
+			Delay:       0,
+			ProxyListID: proxyListID,
 		})
 		if err != nil {
 			log.Printf("failed to create task: %v", err)
