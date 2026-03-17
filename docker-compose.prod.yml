@@ -24,7 +24,7 @@ services:
     command: ["-path", "/migrations", "-database", "postgres://monitor:${POSTGRES_PASSWORD}@db:5432/go_monitor?sslmode=disable", "up"]
 
   app:
-    build: .
+    image: ghcr.io/buckelew/go-monitor:latest
     restart: unless-stopped
     depends_on:
       migrate:
