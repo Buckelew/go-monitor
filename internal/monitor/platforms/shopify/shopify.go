@@ -3,14 +3,13 @@ package shopify
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
+	"math/rand/v2"
 
 	"github.com/buckelew/go-monitor/internal/monitor"
 )
 
-func productsURL(baseURL string, requestNum uint64) string {
-	cacheBust := strings.Repeat("%20", int(requestNum%100)+1)
-	return fmt.Sprintf("%s/collections/all%s/products.json?limit=250", baseURL, cacheBust)
+func productsURL(baseURL string) string {
+	return fmt.Sprintf("%s/products.json?limit=250&page=-%d", baseURL, rand.Int64N(99999999999999))
 }
 
 func parseItems(data []byte, baseURL string) ([]monitor.Item, error) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sync/atomic"
 	"time"
 
 	http "github.com/bogdanfinn/fhttp"
@@ -14,10 +13,9 @@ import (
 )
 
 type SearchShopify struct {
-	URL        string
-	baseURL    string
-	client     *httpclient.Client
-	requestNum atomic.Uint64
+	URL     string
+	baseURL string
+	client  *httpclient.Client
 }
 
 func (s *SearchShopify) Platform() monitor.Platform {
@@ -27,8 +25,7 @@ func (s *SearchShopify) Platform() monitor.Platform {
 func (s *SearchShopify) Client() *httpclient.Client { return s.client }
 
 func (s *SearchShopify) FetchProducts(ctx context.Context) (*monitor.FetchResult, error) {
-	reqNum := s.requestNum.Add(1) - 1
-	url := productsURL(s.baseURL, reqNum)
+	url := productsURL(s.baseURL)
 
 	if err := s.client.RotateProxy(); err != nil {
 		return nil, fmt.Errorf("failed to rotate proxy: %w", err)
