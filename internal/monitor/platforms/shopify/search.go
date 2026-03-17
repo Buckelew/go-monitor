@@ -25,49 +25,65 @@ func (s *SearchShopify) Platform() monitor.Platform {
 func (s *SearchShopify) Client() *httpclient.Client { return s.client }
 
 func (s *SearchShopify) FetchProducts(ctx context.Context) (*monitor.FetchResult, error) {
-	url := productsURL(s.baseURL)
+	var allItems []monitor.Item
+	var totalDuration time.Duration
+	var totalBodySize int
+	var lastCache string
 
-	if err := s.client.RotateProxy(); err != nil {
-		return nil, fmt.Errorf("failed to rotate proxy: %w", err)
-	}
+	for page := 1; ; page++ {
+		if err := s.client.RotateProxy(); err != nil {
+			return nil, fmt.Errorf("failed to rotate proxy: %w", err)
+		}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
+		url := productsURL(s.baseURL, page)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
 
-	start := time.Now()
-	resp, err := s.client.Inner().Do(req)
-	duration := time.Since(start)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+		start := time.Now()
+		resp, err := s.client.Inner().Do(req)
+		totalDuration += time.Since(start)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode == 401 {
-		return nil, monitor.ErrPasswordPage
-	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, s.URL)
-	}
+		if page == 1 {
+			if resp.StatusCode == 401 {
+				return nil, monitor.ErrPasswordPage
+			}
+			lastCache = cacheStatus(resp)
+		}
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, s.URL)
+		}
 
-	readBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		totalBodySize += len(body)
 
-	items, err := parseItems(readBytes, s.URL)
-	if err != nil {
-		return nil, err
+		items, err := parseItems(body, s.URL)
+		if err != nil {
+			return nil, err
+		}
+		allItems = append(allItems, items...)
+
+		// Less than 250 means we've reached the last page
+		if len(items) < 250 {
+			break
+		}
 	}
 
 	return &monitor.FetchResult{
-		Items: items,
+		Items: allItems,
 		Meta: monitor.FetchMeta{
-			StatusCode:  resp.StatusCode,
-			CacheStatus: cacheStatus(resp),
-			Duration:    duration,
-			BodySize:    len(readBytes),
+			StatusCode:  200,
+			CacheStatus: lastCache,
+			Duration:    totalDuration,
+			BodySize:    totalBodySize,
 			Proxy:       s.client.CurrentProxyRaw(),
 		},
 	}, nil
