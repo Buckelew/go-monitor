@@ -34,14 +34,17 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Deploy to server
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          script: |
-            echo '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io -u buckelew --password-stdin
-            cd /opt/go-monitor
-            git pull
-            docker compose -f docker-compose.prod.yml pull app
-            docker compose -f docker-compose.prod.yml up -d
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key root@$DEPLOY_HOST "\
+            echo '$GHCR_TOKEN' | docker login ghcr.io -u buckelew --password-stdin && \
+            cd /opt/go-monitor && \
+            git pull && \
+            docker compose -f docker-compose.prod.yml pull app && \
+            docker compose -f docker-compose.prod.yml up -d"
