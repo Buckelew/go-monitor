@@ -39,6 +39,9 @@ jobs:
           echo "${{ secrets.DEPLOY_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          echo "Key type: $(head -1 ~/.ssh/deploy_key)"
+          echo "Key lines: $(wc -l < ~/.ssh/deploy_key)"
+          ssh -vvv -i ~/.ssh/deploy_key -o BatchMode=yes root@${{ secrets.DEPLOY_HOST }} "echo ok" 2>&1 | tail -30 || true
 
       - name: Deploy to server
         run: |
