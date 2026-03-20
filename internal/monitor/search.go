@@ -77,7 +77,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			Item: Item{URL: s.url, Title: "Password page down"},
 		})
 	}
-	for _, item := range fetched.Items {
+	for i, item := range fetched.Items {
 		existing, err := s.queries.GetItemByTaskAndURL(ctx, database.GetItemByTaskAndURLParams{
 			TaskID: s.id,
 			Url:    item.URL,
@@ -94,6 +94,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			})
 			if err != nil {
 				log.Printf("[task %d] failed to insert item %s: %v", s.id, item.URL, err)
+				fetched.Items[i].Data = nil
 				continue
 			}
 
@@ -101,11 +102,13 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 
 			// Log the event in DB
 			s.insertEvent(ctx, created.ID, json.RawMessage("{}"), item.Data)
+			fetched.Items[i].Data = nil
 			continue
 		}
 
 		if err != nil {
 			log.Printf("[task %d] failed to look up item %s: %v", s.id, item.URL, err)
+			fetched.Items[i].Data = nil
 			continue
 		}
 
@@ -143,6 +146,10 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 				log.Printf("[task %d] failed to update in_stock for %s: %v", s.id, item.URL, err)
 			}
 		}
+
+		// Release the raw JSON payload so GC can collect it while other
+		// items (or other tasks) wait for DB connections.
+		fetched.Items[i].Data = nil
 	}
 
 	// Delisting detection: any active DB item not in the scraped set is delisted
