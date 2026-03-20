@@ -119,6 +119,46 @@ func (q *Queries) GetItemDataByID(ctx context.Context, id int32) (json.RawMessag
 	return data, err
 }
 
+const getItemSummariesByTask = `-- name: GetItemSummariesByTask :many
+SELECT id, url, delisted, in_stock FROM items
+WHERE task_id = $1
+`
+
+type GetItemSummariesByTaskRow struct {
+	ID       int32  `json:"id"`
+	Url      string `json:"url"`
+	Delisted bool   `json:"delisted"`
+	InStock  bool   `json:"in_stock"`
+}
+
+func (q *Queries) GetItemSummariesByTask(ctx context.Context, taskID int32) ([]GetItemSummariesByTaskRow, error) {
+	rows, err := q.db.QueryContext(ctx, getItemSummariesByTask, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetItemSummariesByTaskRow
+	for rows.Next() {
+		var i GetItemSummariesByTaskRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Url,
+			&i.Delisted,
+			&i.InStock,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertItemEvent = `-- name: InsertItemEvent :one
 INSERT INTO item_events (item_id, previous_state, new_state)
 VALUES ($1, $2, $3)

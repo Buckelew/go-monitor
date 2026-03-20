@@ -77,13 +77,25 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			Item: Item{URL: s.url, Title: "Password page down"},
 		})
 	}
-	for i, item := range fetched.Items {
-		existing, err := s.queries.GetItemByTaskAndURL(ctx, database.GetItemByTaskAndURLParams{
-			TaskID: s.id,
-			Url:    item.URL,
-		})
+	// Pre-fetch all known items for this task in one query (no Data column).
+	// This replaces N per-item GetItemByTaskAndURL calls with 1 bulk query,
+	// eliminating ~1000 DB round trips per cycle for large stores.
+	summaries, err := s.queries.GetItemSummariesByTask(ctx, s.id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pre-fetch item summaries: %w", err)
+	}
+	knownItems := make(map[string]database.GetItemSummariesByTaskRow, len(summaries))
+	for _, row := range summaries {
+		knownItems[row.Url] = row
+	}
 
-		if err == sql.ErrNoRows {
+	scrapedURLs := make(map[string]bool, len(fetched.Items))
+	for i, item := range fetched.Items {
+		scrapedURLs[item.URL] = true
+
+		existing, found := knownItems[item.URL]
+
+		if !found {
 			// New product — insert it
 			created, err := s.queries.UpsertItem(ctx, database.UpsertItemParams{
 				TaskID:   s.id,
@@ -99,15 +111,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			}
 
 			events = append(events, ItemEvent{Type: EventNewProduct, Item: item, ItemID: created.ID})
-
-			// Log the event in DB
 			s.insertEvent(ctx, created.ID, json.RawMessage("{}"), item.Data)
-			fetched.Items[i].Data = nil
-			continue
-		}
-
-		if err != nil {
-			log.Printf("[task %d] failed to look up item %s: %v", s.id, item.URL, err)
 			fetched.Items[i].Data = nil
 			continue
 		}
@@ -117,18 +121,21 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			if err := s.queries.UndelistItem(ctx, existing.ID); err != nil {
 				log.Printf("[task %d] failed to un-delist item %s: %v", s.id, item.URL, err)
 			}
+			prevData := s.getItemData(ctx, existing.ID)
 			events = append(events, ItemEvent{Type: EventRestock, Item: item, ItemID: existing.ID})
-			s.insertEvent(ctx, existing.ID, existing.Data, item.Data)
+			s.insertEvent(ctx, existing.ID, prevData, item.Data)
 		}
 
 		// Check for restock (OOS → IS)
 		if !existing.Delisted && !existing.InStock && item.InStock {
+			prevData := s.getItemData(ctx, existing.ID)
 			events = append(events, ItemEvent{Type: EventRestock, Item: item, ItemID: existing.ID})
-			s.insertEvent(ctx, existing.ID, existing.Data, item.Data)
+			s.insertEvent(ctx, existing.ID, prevData, item.Data)
 		}
 
-		// Update data if changed
-		if string(existing.Data) != string(item.Data) {
+		// Update data — fetch existing Data only when we need to compare
+		existingData := s.getItemData(ctx, existing.ID)
+		if string(existingData) != string(item.Data) {
 			if err := s.queries.UpdateItemData(ctx, database.UpdateItemDataParams{
 				ID:   existing.ID,
 				Data: item.Data,
@@ -147,45 +154,37 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			}
 		}
 
-		// Release the raw JSON payload so GC can collect it while other
-		// items (or other tasks) wait for DB connections.
 		fetched.Items[i].Data = nil
 	}
 
-	// Delisting detection: any active DB item not in the scraped set is delisted
-	scrapedURLs := make(map[string]bool, len(fetched.Items))
-	for _, item := range fetched.Items {
-		scrapedURLs[item.URL] = true
-	}
-
-	// Use lightweight query (id, url only) to avoid loading ~15KB of JSON
-	// Data per item. Data is fetched individually only for rare delistings.
-	activeItems, err := s.queries.GetActiveItemURLsByTask(ctx, s.id)
-	if err != nil {
-		log.Printf("[task %d] failed to get active items for delisting check: %v", s.id, err)
-	} else {
-		for _, dbItem := range activeItems {
-			if !scrapedURLs[dbItem.Url] {
-				if err := s.queries.MarkItemDelisted(ctx, dbItem.ID); err != nil {
-					log.Printf("[task %d] failed to mark item %s delisted: %v", s.id, dbItem.Url, err)
-					continue
-				}
-				prevData, err := s.queries.GetItemDataByID(ctx, dbItem.ID)
-				if err != nil {
-					log.Printf("[task %d] failed to fetch data for delisted item %s: %v", s.id, dbItem.Url, err)
-					prevData = json.RawMessage("{}")
-				}
-				events = append(events, ItemEvent{
-					Type:   EventDelisted,
-					Item:   Item{URL: dbItem.Url, Data: prevData},
-					ItemID: dbItem.ID,
-				})
-				s.insertEvent(ctx, dbItem.ID, prevData, json.RawMessage(`{"delisted": true}`))
-			}
+	// Delisting detection: any known active item not in the scraped set
+	for url, row := range knownItems {
+		if row.Delisted || scrapedURLs[url] {
+			continue
 		}
+		if err := s.queries.MarkItemDelisted(ctx, row.ID); err != nil {
+			log.Printf("[task %d] failed to mark item %s delisted: %v", s.id, url, err)
+			continue
+		}
+		prevData := s.getItemData(ctx, row.ID)
+		events = append(events, ItemEvent{
+			Type:   EventDelisted,
+			Item:   Item{URL: url, Data: prevData},
+			ItemID: row.ID,
+		})
+		s.insertEvent(ctx, row.ID, prevData, json.RawMessage(`{"delisted": true}`))
 	}
 
 	return &TaskResult{Success: true, Events: events, Meta: &meta}, nil
+}
+
+func (s *SearchTask) getItemData(ctx context.Context, itemID int32) json.RawMessage {
+	data, err := s.queries.GetItemDataByID(ctx, itemID)
+	if err != nil {
+		log.Printf("[task %d] failed to fetch item data for %d: %v", s.id, itemID, err)
+		return json.RawMessage("{}")
+	}
+	return data
 }
 
 func (s *SearchTask) insertEvent(ctx context.Context, itemID int32, prevState, newState json.RawMessage) {

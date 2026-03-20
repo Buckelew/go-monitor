@@ -3,6 +3,10 @@ SELECT * FROM items
 WHERE task_id = $1 AND url = $2
 LIMIT 1;
 
+-- name: GetItemSummariesByTask :many
+SELECT id, url, delisted, in_stock FROM items
+WHERE task_id = $1;
+
 -- name: GetActiveItemsByTask :many
 SELECT * FROM items
 WHERE task_id = $1 AND delisted = false;

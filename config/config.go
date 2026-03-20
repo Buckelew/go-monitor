@@ -30,8 +30,8 @@ type (
 		Password           string `env:"POSTGRES_PASSWORD,required"`
 		URL                string `env:"POSTGRES_URL,required"`
 		TestURL            string `env:"POSTGRES_TEST_URL,required"`
-		MaxConnections     int    `env:"POSTGRES_MAX_CONNECTIONS" envDefault:"25"`
-		MaxIdleConnections int    `env:"POSTGRES_MAX_IDLE_CONNECTIONS" envDefault:"5"`
+		MaxConnections     int    `env:"POSTGRES_MAX_CONNECTIONS" envDefault:"75"`
+		MaxIdleConnections int    `env:"POSTGRES_MAX_IDLE_CONNECTIONS" envDefault:"20"`
 	}
 
 	Discord struct {
