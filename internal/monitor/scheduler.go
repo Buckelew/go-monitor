@@ -100,6 +100,7 @@ func (s *Scheduler) newRunner(p Platform, tasks []Task) *platformRunner {
 		tasks:    tasks,
 		lastRun:  make(map[int32]time.Time),
 		notFirst: make(map[int32]bool),
+		sem:      make(chan struct{}, 1), // sized once in run() after first proxy count
 		queries:  s.queries,
 		hub:      s.hub,
 		wg:       &s.wg,
@@ -159,19 +160,16 @@ func (r *platformRunner) refreshProxyCount(ctx context.Context) {
 	r.mu.Unlock()
 }
 
-func (r *platformRunner) updateSem() {
-	r.mu.RLock()
+func (r *platformRunner) run(ctx context.Context) {
+	r.refreshProxyCount(ctx)
+
+	// Size the semaphore once based on initial proxy count. Never replaced
+	// at runtime to avoid a race where goroutines release on a stale channel.
 	pc := r.proxyCount
-	r.mu.RUnlock()
 	if pc < 1 {
 		pc = 1
 	}
 	r.sem = make(chan struct{}, pc)
-}
-
-func (r *platformRunner) run(ctx context.Context) {
-	r.refreshProxyCount(ctx)
-	r.updateSem()
 
 	interval := r.tickInterval()
 	r.ticker = time.NewTicker(interval)
@@ -195,7 +193,6 @@ func (r *platformRunner) run(ctx context.Context) {
 		case <-proxyRefresh.C:
 			old := r.tickInterval()
 			r.refreshProxyCount(ctx)
-			r.updateSem()
 			if nw := r.tickInterval(); nw != old {
 				r.ticker.Reset(nw)
 				log.Printf("[%s] tick interval: %v -> %v (%d proxies)",
