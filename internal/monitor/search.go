@@ -151,7 +151,9 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 		scrapedURLs[item.URL] = true
 	}
 
-	activeItems, err := s.queries.GetActiveItemsByTask(ctx, s.id)
+	// Use lightweight query (id, url only) to avoid loading ~15KB of JSON
+	// Data per item. Data is fetched individually only for rare delistings.
+	activeItems, err := s.queries.GetActiveItemURLsByTask(ctx, s.id)
 	if err != nil {
 		log.Printf("[task %d] failed to get active items for delisting check: %v", s.id, err)
 	} else {
@@ -161,12 +163,17 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 					log.Printf("[task %d] failed to mark item %s delisted: %v", s.id, dbItem.Url, err)
 					continue
 				}
+				prevData, err := s.queries.GetItemDataByID(ctx, dbItem.ID)
+				if err != nil {
+					log.Printf("[task %d] failed to fetch data for delisted item %s: %v", s.id, dbItem.Url, err)
+					prevData = json.RawMessage("{}")
+				}
 				events = append(events, ItemEvent{
 					Type:   EventDelisted,
-					Item:   Item{URL: dbItem.Url, Data: dbItem.Data},
+					Item:   Item{URL: dbItem.Url, Data: prevData},
 					ItemID: dbItem.ID,
 				})
-				s.insertEvent(ctx, dbItem.ID, dbItem.Data, json.RawMessage(`{"delisted": true}`))
+				s.insertEvent(ctx, dbItem.ID, prevData, json.RawMessage(`{"delisted": true}`))
 			}
 		}
 	}

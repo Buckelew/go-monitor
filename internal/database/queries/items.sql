@@ -7,6 +7,14 @@ LIMIT 1;
 SELECT * FROM items
 WHERE task_id = $1 AND delisted = false;
 
+-- name: GetActiveItemURLsByTask :many
+SELECT id, url FROM items
+WHERE task_id = $1 AND delisted = false;
+
+-- name: GetItemDataByID :one
+SELECT data FROM items
+WHERE id = $1;
+
 -- name: UpdateItemData :exec
 UPDATE items
 SET data = $2

@@ -10,6 +10,39 @@ import (
 	"encoding/json"
 )
 
+const getActiveItemURLsByTask = `-- name: GetActiveItemURLsByTask :many
+SELECT id, url FROM items
+WHERE task_id = $1 AND delisted = false
+`
+
+type GetActiveItemURLsByTaskRow struct {
+	ID  int32  `json:"id"`
+	Url string `json:"url"`
+}
+
+func (q *Queries) GetActiveItemURLsByTask(ctx context.Context, taskID int32) ([]GetActiveItemURLsByTaskRow, error) {
+	rows, err := q.db.QueryContext(ctx, getActiveItemURLsByTask, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetActiveItemURLsByTaskRow
+	for rows.Next() {
+		var i GetActiveItemURLsByTaskRow
+		if err := rows.Scan(&i.ID, &i.Url); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getActiveItemsByTask = `-- name: GetActiveItemsByTask :many
 SELECT id, task_id, url, platform, created_at, data, delisted, in_stock FROM items
 WHERE task_id = $1 AND delisted = false
@@ -72,6 +105,18 @@ func (q *Queries) GetItemByTaskAndURL(ctx context.Context, arg GetItemByTaskAndU
 		&i.InStock,
 	)
 	return i, err
+}
+
+const getItemDataByID = `-- name: GetItemDataByID :one
+SELECT data FROM items
+WHERE id = $1
+`
+
+func (q *Queries) GetItemDataByID(ctx context.Context, id int32) (json.RawMessage, error) {
+	row := q.db.QueryRowContext(ctx, getItemDataByID, id)
+	var data json.RawMessage
+	err := row.Scan(&data)
+	return data, err
 }
 
 const insertItemEvent = `-- name: InsertItemEvent :one

@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"sync"
 
@@ -15,31 +16,37 @@ type Client struct {
 	currentProxy string // last proxy URL set by RotateProxy
 }
 
-func New(rotator *ProxyRotator) (*Client, error) {
+// newTLSClient creates a fresh tls_client configured for HTTP/1.1 only.
+// HTTP/2 is disabled to prevent readLoop goroutine leaks: SetProxy internally
+// replaces the transport but orphans old HTTP/2 connections whose readLoop
+// goroutines keep them alive indefinitely.
+func newTLSClient(proxyURL string) (tls_client.HttpClient, error) {
 	options := []tls_client.HttpClientOption{
 		tls_client.WithTimeoutSeconds(30),
 		tls_client.WithClientProfile(profiles.Chrome_144),
+		tls_client.WithForceHttp1(),
 	}
+	if proxyURL != "" {
+		options = append(options, tls_client.WithProxyUrl(proxyURL))
+	}
+	return tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
+}
 
-	inner, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
+func New(rotator *ProxyRotator) (*Client, error) {
+	var proxyURL string
+	if rotator != nil {
+		proxyURL = rotator.Next()
+	}
+	inner, err := newTLSClient(proxyURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tls client: %w", err)
 	}
-
-	c := &Client{inner: inner, rotator: rotator}
-
-	// Set initial proxy if available
-	if rotator != nil {
-		if proxy := rotator.Next(); proxy != "" {
-			inner.SetProxy(proxy)
-		}
-	}
-
-	return c, nil
+	return &Client{inner: inner, rotator: rotator, currentProxy: proxyURL}, nil
 }
 
-// RotateProxy switches to the next proxy in the rotation.
-// Call this before each request for round-robin behavior.
+// RotateProxy creates a fresh tls_client with the next proxy, replacing the
+// old one. This avoids the connection leak caused by SetProxy orphaning the
+// previous transport's connections.
 func (c *Client) RotateProxy() error {
 	if c.rotator == nil {
 		return nil
@@ -48,14 +55,16 @@ func (c *Client) RotateProxy() error {
 	if proxy == "" {
 		return nil
 	}
-	c.currentProxy = proxy
-	if err := c.inner.SetProxy(proxy); err != nil {
+
+	inner, err := newTLSClient(proxy)
+	if err != nil {
 		return err
 	}
-	// Close idle connections from previous proxies to prevent HTTP/2
-	// readLoop goroutine accumulation. Each SetProxy changes the target
-	// but old connections linger indefinitely otherwise.
+
+	// Best-effort cleanup of old client's connections before swapping.
 	c.inner.CloseIdleConnections()
+	c.inner = inner
+	c.currentProxy = proxy
 	return nil
 }
 
@@ -68,13 +77,19 @@ func (c *Client) CurrentProxyRaw() string {
 	return ProxyURLToRaw(c.currentProxy)
 }
 
-// SetRotator swaps the proxy rotator and immediately sets the first proxy.
+// SetRotator swaps the proxy rotator and recreates the tls_client with the
+// first proxy from the new rotator.
 func (c *Client) SetRotator(rotator *ProxyRotator) {
 	c.rotator = rotator
 	if rotator != nil {
 		if proxy := rotator.Next(); proxy != "" {
-			c.inner.SetProxy(proxy)
+			inner, err := newTLSClient(proxy)
+			if err != nil {
+				log.Printf("httpclient: failed to recreate client on rotator swap: %v", err)
+				return
+			}
 			c.inner.CloseIdleConnections()
+			c.inner = inner
 		}
 	}
 }
