@@ -163,11 +163,18 @@ func (r *platformRunner) refreshProxyCount(ctx context.Context) {
 func (r *platformRunner) run(ctx context.Context) {
 	r.refreshProxyCount(ctx)
 
-	// Size the semaphore once based on initial proxy count. Never replaced
-	// at runtime to avoid a race where goroutines release on a stale channel.
+	// Size the semaphore once. Cap at the number of tasks to avoid running
+	// more goroutines than tasks (each holds parsed product data in memory).
 	pc := r.proxyCount
 	if pc < 1 {
 		pc = 1
+	}
+	maxConcurrent := int64(len(r.tasks))
+	if maxConcurrent > 10 {
+		maxConcurrent = 10 // hard cap to limit peak memory from concurrent catalog parsing
+	}
+	if pc > maxConcurrent {
+		pc = maxConcurrent
 	}
 	r.sem = make(chan struct{}, pc)
 
