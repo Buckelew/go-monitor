@@ -164,9 +164,10 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			continue
 		}
 		prevData := s.getItemData(ctx, row.ID)
+		title, imageURL := extractItemInfo(prevData)
 		events = append(events, ItemEvent{
 			Type:   EventDelisted,
-			Item:   Item{URL: url, Data: prevData},
+			Item:   Item{URL: url, Title: title, ImageURL: imageURL, Data: prevData},
 			ItemID: row.ID,
 		})
 		s.insertEvent(ctx, row.ID, prevData, json.RawMessage(`{"delisted": true}`))
@@ -233,6 +234,50 @@ func (s *SearchTask) maybeRefreshProxies(ctx context.Context) {
 
 	s.proxyVersion = currentVersion
 	log.Printf("[task %d] proxies refreshed (version %d)", s.id, currentVersion)
+}
+
+// extractItemInfo extracts title and image URL from stored item data JSON.
+// Handles all platform formats: Shopify (title, images[].src), BigCartel
+// (name, images[].secure_url), Squarespace (title, assetUrl), Reddit (title, thumbnail).
+func extractItemInfo(data json.RawMessage) (title, imageURL string) {
+	if len(data) == 0 {
+		return "", ""
+	}
+	var d struct {
+		Title     string `json:"title"`
+		Name      string `json:"name"`
+		AssetURL  string `json:"assetUrl"`
+		Thumbnail string `json:"thumbnail"`
+		Images    []struct {
+			Src       string `json:"src"`
+			SecureURL string `json:"secure_url"`
+		} `json:"images"`
+	}
+	if json.Unmarshal(data, &d) != nil {
+		return "", ""
+	}
+
+	title = d.Title
+	if title == "" {
+		title = d.Name
+	}
+
+	if len(d.Images) > 0 {
+		if d.Images[0].Src != "" {
+			imageURL = d.Images[0].Src
+		} else if d.Images[0].SecureURL != "" {
+			imageURL = d.Images[0].SecureURL
+		}
+	}
+	if imageURL == "" && d.AssetURL != "" {
+		imageURL = d.AssetURL
+	}
+	if imageURL == "" && d.Thumbnail != "" &&
+		d.Thumbnail != "self" && d.Thumbnail != "default" && d.Thumbnail != "nsfw" {
+		imageURL = d.Thumbnail
+	}
+
+	return title, imageURL
 }
 
 func NewSearchTask(queries database.Queries, scraper Scraper, task database.Task, registry *httpclient.ProxyRegistry) *SearchTask {

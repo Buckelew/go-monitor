@@ -1,75 +1,110 @@
 package discord
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/buckelew/go-monitor/internal/monitor"
 )
 
 const (
-	colorBlue  = 0x0099ff
-	colorGreen = 0x2ecc71
-	colorRed   = 0xe74c3c
+	colorBlue   = 0x0099ff
+	colorGreen  = 0x2ecc71
+	colorRed    = 0xe74c3c
 	embedFooter = "@buckelew"
 )
 
-func NewProductEmbed(title, store, url, imageURL string) *discordgo.MessageEmbed {
+type eventStyle struct {
+	Color  int
+	Prefix string
+}
+
+var eventStyles = map[monitor.EventType]eventStyle{
+	monitor.EventNewProduct:   {colorBlue, "New Product: "},
+	monitor.EventRestock:      {colorGreen, "Restocked: "},
+	monitor.EventDelisted:     {colorRed, "Removed: "},
+	monitor.EventPasswordUp:   {colorRed, "Password Up"},
+	monitor.EventPasswordDown: {colorGreen, "Password Down"},
+}
+
+// BuildEmbed creates a uniform Discord embed for any item event.
+func BuildEmbed(event monitor.ItemEvent) *discordgo.MessageEmbed {
+	style := eventStyles[event.Type]
+	store := storeFromURL(event.Item.URL)
+
+	// Password events are store-level, not product-level.
+	if event.Type == monitor.EventPasswordUp || event.Type == monitor.EventPasswordDown {
+		return &discordgo.MessageEmbed{
+			Title:     style.Prefix,
+			URL:       event.Item.URL,
+			Color:     style.Color,
+			Author:    &discordgo.MessageEmbedAuthor{Name: store},
+			Footer:    &discordgo.MessageEmbedFooter{Text: embedFooter},
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+	}
+
 	embed := &discordgo.MessageEmbed{
-		Title:     title,
-		URL:       url,
-		Color:     colorBlue,
-		Author:    &discordgo.MessageEmbedAuthor{Name: store, URL: url},
+		Title:     style.Prefix + event.Item.Title,
+		URL:       event.Item.URL,
+		Color:     style.Color,
+		Author:    &discordgo.MessageEmbedAuthor{Name: store},
 		Footer:    &discordgo.MessageEmbedFooter{Text: embedFooter},
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
-	if imageURL != "" {
-		embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: imageURL}
+
+	if event.Item.ImageURL != "" {
+		embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: event.Item.ImageURL}
 	}
+
+	if price := priceFromData(event.Item.Data); price != "" {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:   "Price",
+			Value:  price,
+			Inline: true,
+		})
+	}
+
+	// Stock status for new/restock only (redundant for "Removed:").
+	if event.Type == monitor.EventNewProduct || event.Type == monitor.EventRestock {
+		status := "Out of Stock"
+		if event.Item.InStock {
+			status = "In Stock"
+		}
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:   "Status",
+			Value:  status,
+			Inline: true,
+		})
+	}
+
 	return embed
 }
 
-func RestockEmbed(title, store, url, imageURL string) *discordgo.MessageEmbed {
-	embed := &discordgo.MessageEmbed{
-		Title:     title + " Restocked",
-		URL:       url,
-		Color:     colorGreen,
-		Author:    &discordgo.MessageEmbedAuthor{Name: store, URL: url},
-		Footer:    &discordgo.MessageEmbedFooter{Text: embedFooter},
-		Timestamp: time.Now().Format(time.RFC3339),
+// priceFromData extracts the first available price from item data JSON.
+// Currently only Shopify stores variant prices in the data column.
+func priceFromData(data json.RawMessage) string {
+	if len(data) == 0 {
+		return ""
 	}
-	if imageURL != "" {
-		embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: imageURL}
+	var d struct {
+		Variants []struct {
+			Price string `json:"price"`
+		} `json:"variants"`
 	}
-	return embed
+	if json.Unmarshal(data, &d) == nil && len(d.Variants) > 0 && d.Variants[0].Price != "" {
+		return fmt.Sprintf("$%s", d.Variants[0].Price)
+	}
+	return ""
 }
 
-func DelistedEmbed(title, store, url string) *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
-		Title:     title + " Delisted",
-		URL:       url,
-		Color:     colorRed,
-		Author:    &discordgo.MessageEmbedAuthor{Name: store, URL: url},
-		Footer:    &discordgo.MessageEmbedFooter{Text: embedFooter},
-		Timestamp: time.Now().Format(time.RFC3339),
+func storeFromURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
 	}
-}
-
-func PasswordUpEmbed(store string) *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
-		Title:       "Password page up",
-		Description: store,
-		Color:       colorRed,
-		Footer:      &discordgo.MessageEmbedFooter{Text: embedFooter},
-		Timestamp:   time.Now().Format(time.RFC3339),
-	}
-}
-
-func PasswordDownEmbed(store string) *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
-		Title:       "Password page down",
-		Description: store,
-		Color:       colorGreen,
-		Footer:      &discordgo.MessageEmbedFooter{Text: embedFooter},
-		Timestamp:   time.Now().Format(time.RFC3339),
-	}
+	return u.Host
 }
