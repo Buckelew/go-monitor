@@ -133,16 +133,13 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			s.insertEvent(ctx, existing.ID, prevData, item.Data)
 		}
 
-		// Update data — fetch existing Data only when we need to compare
-		existingData := s.getItemData(ctx, existing.ID)
-		if string(existingData) != string(item.Data) {
-			if err := s.queries.UpdateItemData(ctx, database.UpdateItemDataParams{
-				ID:   existing.ID,
-				Data: item.Data,
-			}); err != nil {
-				log.Printf("[task %d] failed to update item data for %s: %v", s.id, item.URL, err)
-			}
-		}
+		// Update data unconditionally — let the DB skip if unchanged via
+		// the WHERE clause. Avoids fetching existing Data into Go memory
+		// just to compare (~15KB per item × 1000+ items = major allocation).
+		s.queries.UpdateItemDataIfChanged(ctx, database.UpdateItemDataIfChangedParams{
+			ID:   existing.ID,
+			Data: item.Data,
+		})
 
 		// Update in_stock if changed
 		if existing.InStock != item.InStock {
