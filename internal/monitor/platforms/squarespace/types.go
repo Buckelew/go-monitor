@@ -1,12 +1,5 @@
 package squarespace
 
-import "encoding/json"
-
-type squarespaceResponse struct {
-	Items      []json.RawMessage `json:"items"`
-	Pagination *sqsPagination    `json:"pagination"`
-}
-
 type sqsPagination struct {
 	NextPage       bool `json:"nextPage"`
 	NextPageOffset int  `json:"nextPageOffset"`

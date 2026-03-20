@@ -49,7 +49,14 @@ func (c *Client) RotateProxy() error {
 		return nil
 	}
 	c.currentProxy = proxy
-	return c.inner.SetProxy(proxy)
+	if err := c.inner.SetProxy(proxy); err != nil {
+		return err
+	}
+	// Close idle connections from previous proxies to prevent HTTP/2
+	// readLoop goroutine accumulation. Each SetProxy changes the target
+	// but old connections linger indefinitely otherwise.
+	c.inner.CloseIdleConnections()
+	return nil
 }
 
 // CurrentProxyRaw returns the current proxy in host:port:user:pass format
@@ -67,6 +74,7 @@ func (c *Client) SetRotator(rotator *ProxyRotator) {
 	if rotator != nil {
 		if proxy := rotator.Next(); proxy != "" {
 			c.inner.SetProxy(proxy)
+			c.inner.CloseIdleConnections()
 		}
 	}
 }

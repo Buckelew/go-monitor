@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"time"
 )
 
@@ -87,4 +88,16 @@ type Task interface {
 	Type() TaskType
 	Run(ctx context.Context) (*TaskResult, error)
 	IsEnabled() bool
+}
+
+// CountingReader wraps an io.Reader and counts bytes read.
+type CountingReader struct {
+	R io.Reader
+	N int
+}
+
+func (cr *CountingReader) Read(p []byte) (int, error) {
+	n, err := cr.R.Read(p)
+	cr.N += n
+	return n, err
 }

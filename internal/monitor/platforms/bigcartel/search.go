@@ -54,12 +54,9 @@ func (s *SearchBigCartel) FetchProducts(ctx context.Context) (*monitor.FetchResu
 		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, s.URL)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	items, err := parseItems(body, s.URL)
+	cr := &monitor.CountingReader{R: resp.Body}
+	items, err := parseItems(cr, s.URL)
+	io.Copy(io.Discard, cr) // drain remaining bytes for connection reuse
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +66,7 @@ func (s *SearchBigCartel) FetchProducts(ctx context.Context) (*monitor.FetchResu
 		Meta: monitor.FetchMeta{
 			StatusCode:  resp.StatusCode,
 			Duration:    duration,
-			BodySize:    len(body),
+			BodySize:    cr.N,
 			Proxy:       s.client.CurrentProxyRaw(),
 		},
 	}, nil

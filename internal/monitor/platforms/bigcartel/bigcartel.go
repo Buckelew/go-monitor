@@ -3,6 +3,7 @@ package bigcartel
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 
@@ -33,9 +34,9 @@ func productsURL(storeURL, apiBase string) (string, error) {
 	return fmt.Sprintf("%s/products.json", strings.TrimRight(storeURL, "/")), nil
 }
 
-func parseItems(data []byte, storeURL string) ([]monitor.Item, error) {
+func parseItems(r io.Reader, storeURL string) ([]monitor.Item, error) {
 	var products []bigcartelProduct
-	if err := json.Unmarshal(data, &products); err != nil {
+	if err := json.NewDecoder(r).Decode(&products); err != nil {
 		return nil, err
 	}
 

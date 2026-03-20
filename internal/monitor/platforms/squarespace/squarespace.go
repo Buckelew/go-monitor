@@ -3,6 +3,7 @@ package squarespace
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/buckelew/go-monitor/internal/monitor"
@@ -16,53 +17,99 @@ func productsURL(baseURL string, offset int) string {
 	return fmt.Sprintf("%s?format=json", baseURL)
 }
 
-func parseItems(data []byte, baseURL string) ([]monitor.Item, error) {
-	var response squarespaceResponse
-	if err := json.Unmarshal(data, &response); err != nil {
+// parseResult holds items and pagination from a single page fetch.
+type parseResult struct {
+	items      []monitor.Item
+	hasNext    bool
+	nextOffset int
+}
+
+// parseItems stream-parses the Squarespace JSON from r, extracting both items
+// and pagination in a single pass. This eliminates the previous double-unmarshal
+// (parseItems + hasNextPage) and avoids buffering the full response body.
+func parseItems(r io.Reader, baseURL string) (*parseResult, error) {
+	dec := json.NewDecoder(r)
+
+	// Expect opening {
+	if t, err := dec.Token(); err != nil {
 		return nil, err
+	} else if t != json.Delim('{') {
+		return nil, fmt.Errorf("expected {, got %v", t)
 	}
 
-	var items []monitor.Item
-	for _, raw := range response.Items {
-		var si squarespaceItem
-		if err := json.Unmarshal(raw, &si); err != nil {
+	result := &parseResult{}
+
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
 			return nil, err
 		}
 
-		inStock := false
-		if si.StructuredContent != nil {
-			for _, v := range si.StructuredContent.Variants {
-				if v.Unlimited || v.QtyInStock > 0 {
-					inStock = true
-					break
+		switch key {
+		case "items":
+			// Stream the items array
+			if t, err := dec.Token(); err != nil {
+				return nil, err
+			} else if t != json.Delim('[') {
+				return nil, fmt.Errorf("expected [, got %v", t)
+			}
+
+			for dec.More() {
+				var raw json.RawMessage
+				if err := dec.Decode(&raw); err != nil {
+					return nil, err
 				}
+
+				var si squarespaceItem
+				if err := json.Unmarshal(raw, &si); err != nil {
+					return nil, err
+				}
+
+				inStock := false
+				if si.StructuredContent != nil {
+					for _, v := range si.StructuredContent.Variants {
+						if v.Unlimited || v.QtyInStock > 0 {
+							inStock = true
+							break
+						}
+					}
+				}
+
+				itemURL := si.FullURL
+				if itemURL == "" {
+					itemURL = fmt.Sprintf("%s/%s", strings.TrimRight(baseURL, "/"), si.URLId)
+				}
+
+				result.items = append(result.items, monitor.Item{
+					URL:      itemURL,
+					Title:    si.Title,
+					InStock:  inStock,
+					ImageURL: si.AssetURL,
+					Data:     raw,
+				})
+			}
+
+			// Consume closing ]
+			if _, err := dec.Token(); err != nil {
+				return nil, err
+			}
+
+		case "pagination":
+			var pag sqsPagination
+			if err := dec.Decode(&pag); err != nil {
+				return nil, err
+			}
+			result.hasNext = pag.NextPage
+			result.nextOffset = pag.NextPageOffset
+
+		default:
+			// Skip unknown fields
+			var skip json.RawMessage
+			if err := dec.Decode(&skip); err != nil {
+				return nil, err
 			}
 		}
-
-		itemURL := si.FullURL
-		if itemURL == "" {
-			itemURL = fmt.Sprintf("%s/%s", strings.TrimRight(baseURL, "/"), si.URLId)
-		}
-
-		items = append(items, monitor.Item{
-			URL:      itemURL,
-			Title:    si.Title,
-			InStock:  inStock,
-			ImageURL: si.AssetURL,
-			Data:     raw,
-		})
 	}
 
-	return items, nil
-}
-
-func hasNextPage(data []byte) (bool, int) {
-	var response squarespaceResponse
-	if err := json.Unmarshal(data, &response); err != nil {
-		return false, 0
-	}
-	if response.Pagination != nil && response.Pagination.NextPage {
-		return true, response.Pagination.NextPageOffset
-	}
-	return false, 0
+	return result, nil
 }

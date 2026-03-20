@@ -5,10 +5,6 @@ import (
 	"time"
 )
 
-type productsResponse struct {
-	Products []json.RawMessage `json:"products"`
-}
-
 type shopifyProduct struct {
 	ID          int64            `json:"id"`
 	Title       string           `json:"title"`

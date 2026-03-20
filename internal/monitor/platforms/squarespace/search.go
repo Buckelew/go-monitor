@@ -55,24 +55,23 @@ func (s *SearchSquarespace) FetchProducts(ctx context.Context) (*monitor.FetchRe
 			return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, s.URL)
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		// Stream-parse items and pagination in a single pass, avoiding
+		// both the io.ReadAll buffer and the old double-unmarshal.
+		cr := &monitor.CountingReader{R: resp.Body}
+		result, err := parseItems(cr, s.URL)
+		io.Copy(io.Discard, cr) // drain remaining bytes for connection reuse
 		resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}
-		totalBodySize += len(body)
+		totalBodySize += cr.N
 
-		items, err := parseItems(body, s.URL)
-		if err != nil {
-			return nil, err
-		}
-		allItems = append(allItems, items...)
+		allItems = append(allItems, result.items...)
 
-		next, nextOffset := hasNextPage(body)
-		if !next {
+		if !result.hasNext {
 			break
 		}
-		offset = nextOffset
+		offset = result.nextOffset
 	}
 
 	return &monitor.FetchResult{

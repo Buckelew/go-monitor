@@ -3,6 +3,7 @@ package reddit
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 
@@ -29,9 +30,9 @@ func postsURL(subredditURL, apiBase string) (string, error) {
 	return fmt.Sprintf("%s/r/%s/new.json?limit=100", base, subreddit), nil
 }
 
-func parseItems(data []byte) ([]monitor.Item, error) {
+func parseItems(r io.Reader) ([]monitor.Item, error) {
 	var response redditResponse
-	if err := json.Unmarshal(data, &response); err != nil {
+	if err := json.NewDecoder(r).Decode(&response); err != nil {
 		return nil, err
 	}
 
