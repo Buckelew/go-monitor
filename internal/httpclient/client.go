@@ -18,7 +18,6 @@ type Client struct {
 var clientOptions = []tls_client.HttpClientOption{
 	tls_client.WithTimeoutSeconds(30),
 	tls_client.WithClientProfile(profiles.Chrome_144),
-	tls_client.WithForceHttp1(),
 }
 
 func newInner(proxy string) (tls_client.HttpClient, error) {
