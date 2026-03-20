@@ -26,12 +26,14 @@ services:
   app:
     image: ghcr.io/buckelew/go-monitor:latest
     restart: unless-stopped
+    mem_limit: 512m
     depends_on:
       migrate:
         condition: service_completed_successfully
     ports:
       - "127.0.0.1:3001:3000"
       - "127.0.0.1:8081:8080"
+      - "127.0.0.1:6060:6060"
     environment:
       LOG_LEVEL: info
       ENV: production

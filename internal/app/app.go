@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -32,6 +33,12 @@ func Run(cfg *config.Config) {
 		sig := <-sigCh
 		log.Printf("received signal %v, shutting down...", sig)
 		cancel()
+	}()
+
+	// pprof server for memory profiling
+	go func() {
+		log.Println("pprof: http://localhost:6060/debug/pprof/")
+		log.Println(http.ListenAndServe(":6060", nil))
 	}()
 
 	queries, db, err := database.Connect(cfg.Database)
