@@ -15,47 +15,55 @@ type Client struct {
 	currentProxy string // last proxy URL set by RotateProxy
 }
 
-func New(rotator *ProxyRotator) (*Client, error) {
-	options := []tls_client.HttpClientOption{
-		tls_client.WithTimeoutSeconds(30),
-		tls_client.WithClientProfile(profiles.Chrome_144),
-		tls_client.WithForceHttp1(),
-	}
+var clientOptions = []tls_client.HttpClientOption{
+	tls_client.WithTimeoutSeconds(30),
+	tls_client.WithClientProfile(profiles.Chrome_144),
+	tls_client.WithForceHttp1(),
+}
 
-	inner, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
+func newInner(proxy string) (tls_client.HttpClient, error) {
+	inner, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), clientOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tls client: %w", err)
 	}
-
-	c := &Client{inner: inner, rotator: rotator}
-
-	// Set initial proxy if available
-	if rotator != nil {
-		if proxy := rotator.Next(); proxy != "" {
-			inner.SetProxy(proxy)
-			c.currentProxy = proxy
-		}
+	if proxy != "" {
+		inner.SetProxy(proxy)
 	}
-
-	return c, nil
+	return inner, nil
 }
 
-// RotateProxy switches to the next proxy. With HTTP/1.1 (forced via
-// WithForceHttp1), connections close naturally after the response is read,
-// so SetProxy + CloseIdleConnections is sufficient to prevent accumulation.
+func New(rotator *ProxyRotator) (*Client, error) {
+	var proxy string
+	if rotator != nil {
+		proxy = rotator.Next()
+	}
+	inner, err := newInner(proxy)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{inner: inner, rotator: rotator, currentProxy: proxy}, nil
+}
+
+// RotateProxy switches to the next proxy. If the proxy hasn't changed,
+// this is a no-op (avoids creating a new transport). When the proxy
+// changes, we create a fresh tls_client so the old transport's connections
+// can be GC'd — tls_client.SetProxy() internally creates a new transport
+// but orphans the old one's connection goroutines.
 func (c *Client) RotateProxy() error {
 	if c.rotator == nil {
 		return nil
 	}
 	proxy := c.rotator.Next()
-	if proxy == "" {
+	if proxy == "" || proxy == c.currentProxy {
 		return nil
 	}
-	c.currentProxy = proxy
-	if err := c.inner.SetProxy(proxy); err != nil {
+	inner, err := newInner(proxy)
+	if err != nil {
 		return err
 	}
 	c.inner.CloseIdleConnections()
+	c.inner = inner
+	c.currentProxy = proxy
 	return nil
 }
 
@@ -73,8 +81,13 @@ func (c *Client) SetRotator(rotator *ProxyRotator) {
 	c.rotator = rotator
 	if rotator != nil {
 		if proxy := rotator.Next(); proxy != "" {
-			c.inner.SetProxy(proxy)
+			inner, err := newInner(proxy)
+			if err != nil {
+				return
+			}
 			c.inner.CloseIdleConnections()
+			c.inner = inner
+			c.currentProxy = proxy
 		}
 	}
 }
