@@ -2,6 +2,13 @@
 SELECT * FROM task_runs
 WHERE status = 'completed' AND task_id = $1;
 
+-- name: HasCompletedTaskRun :one
+SELECT EXISTS(
+  SELECT 1 FROM task_runs
+  WHERE status = 'completed' AND task_id = $1
+  LIMIT 1
+) AS has_run;
+
 -- name: GetRecentTaskRuns :many
 SELECT
   tr.id, tr.started_at, tr.completed_at, tr.status, tr.error_message,

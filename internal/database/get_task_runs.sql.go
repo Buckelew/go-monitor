@@ -84,7 +84,7 @@ type GetRecentTaskRunsRow struct {
 	Url             string         `json:"url"`
 	TaskID          int32          `json:"task_id"`
 	DurationSeconds float64        `json:"duration_seconds"`
-	StatusCode      sql.NullInt32  `json:"status_code"`
+	StatusCode      sql.NullInt16  `json:"status_code"`
 	ResponseTimeMs  sql.NullInt32  `json:"response_time_ms"`
 	CacheStatus     sql.NullString `json:"cache_status"`
 }
@@ -129,4 +129,19 @@ func (q *Queries) GetRecentTaskRuns(ctx context.Context, arg GetRecentTaskRunsPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const hasCompletedTaskRun = `-- name: HasCompletedTaskRun :one
+SELECT EXISTS(
+  SELECT 1 FROM task_runs
+  WHERE status = 'completed' AND task_id = $1
+  LIMIT 1
+) AS has_run
+`
+
+func (q *Queries) HasCompletedTaskRun(ctx context.Context, taskID int32) (bool, error) {
+	row := q.db.QueryRowContext(ctx, hasCompletedTaskRun, taskID)
+	var has_run bool
+	err := row.Scan(&has_run)
+	return has_run, err
 }

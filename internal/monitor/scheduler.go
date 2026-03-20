@@ -99,6 +99,7 @@ func (s *Scheduler) newRunner(p Platform, tasks []Task) *platformRunner {
 		platform: p,
 		tasks:    tasks,
 		lastRun:  make(map[int32]time.Time),
+		notFirst: make(map[int32]bool),
 		queries:  s.queries,
 		hub:      s.hub,
 		wg:       &s.wg,
@@ -112,6 +113,7 @@ type platformRunner struct {
 	tasks      []Task
 	cursor     int
 	lastRun    map[int32]time.Time
+	notFirst   map[int32]bool // cached: true once a task has completed at least one run
 	proxyCount int64
 	ticker     *time.Ticker
 	sem        chan struct{}
@@ -284,7 +286,7 @@ func (r *platformRunner) completeTaskRun(ctx context.Context, runID int32, statu
 		params.ErrorMessage = sql.NullString{String: errMsg, Valid: true}
 	}
 	if meta != nil {
-		params.StatusCode = sql.NullInt32{Int32: int32(meta.StatusCode), Valid: meta.StatusCode != 0}
+		params.StatusCode = sql.NullInt16{Int16: int16(meta.StatusCode), Valid: meta.StatusCode != 0}
 		params.ResponseTimeMs = sql.NullInt32{Int32: int32(meta.Duration.Milliseconds()), Valid: true}
 		if meta.CacheStatus != "" {
 			params.CacheStatus = sql.NullString{String: meta.CacheStatus, Valid: true}
@@ -296,11 +298,18 @@ func (r *platformRunner) completeTaskRun(ctx context.Context, runID int32, statu
 }
 
 func (r *platformRunner) isFirstRun(ctx context.Context, taskID int32) (bool, error) {
-	taskRuns, err := r.queries.GetCompletedTaskRuns(ctx, taskID)
+	if r.notFirst[taskID] {
+		return false, nil
+	}
+	exists, err := r.queries.HasCompletedTaskRun(ctx, taskID)
 	if err != nil {
 		return false, err
 	}
-	return len(taskRuns) == 0, nil
+	if exists {
+		r.notFirst[taskID] = true
+		return false, nil
+	}
+	return true, nil
 }
 
 // ShouldNotify determines whether a subscription should receive a given event.

@@ -21,15 +21,19 @@ type CompleteTaskRunParams struct {
 	ID             int32          `json:"id"`
 	Status         string         `json:"status"`
 	ErrorMessage   sql.NullString `json:"error_message"`
-	StatusCode     sql.NullInt32  `json:"status_code"`
+	StatusCode     sql.NullInt16  `json:"status_code"`
 	ResponseTimeMs sql.NullInt32  `json:"response_time_ms"`
 	CacheStatus    sql.NullString `json:"cache_status"`
 }
 
 func (q *Queries) CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams) error {
 	_, err := q.db.ExecContext(ctx, completeTaskRun,
-		arg.ID, arg.Status, arg.ErrorMessage,
-		arg.StatusCode, arg.ResponseTimeMs, arg.CacheStatus,
+		arg.ID,
+		arg.Status,
+		arg.ErrorMessage,
+		arg.StatusCode,
+		arg.ResponseTimeMs,
+		arg.CacheStatus,
 	)
 	return err
 }

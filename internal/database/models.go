@@ -89,7 +89,7 @@ type TaskRun struct {
 	CompletedAt    sql.NullTime   `json:"completed_at"`
 	Status         string         `json:"status"`
 	ErrorMessage   sql.NullString `json:"error_message"`
-	StatusCode     sql.NullInt32  `json:"status_code"`
+	StatusCode     sql.NullInt16  `json:"status_code"`
 	ResponseTimeMs sql.NullInt32  `json:"response_time_ms"`
 	CacheStatus    sql.NullString `json:"cache_status"`
 }

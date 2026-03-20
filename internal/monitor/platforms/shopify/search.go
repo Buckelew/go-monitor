@@ -47,19 +47,21 @@ func (s *SearchShopify) FetchProducts(ctx context.Context) (*monitor.FetchResult
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
 
 		if page == 1 {
 			if resp.StatusCode == 401 {
+				resp.Body.Close()
 				return nil, monitor.ErrPasswordPage
 			}
 			lastCache = cacheStatus(resp)
 		}
 		if resp.StatusCode != 200 {
+			resp.Body.Close()
 			return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, s.URL)
 		}
 
 		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}
