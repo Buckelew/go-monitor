@@ -548,6 +548,12 @@ func (s *Server) handleCreateProxyList(w http.ResponseWriter, r *http.Request) {
 	// Bump proxy version so running tasks pick up new proxies
 	s.proxyRegistry.Bump(list.ID)
 
+	// Reassign tasks to the correct proxy list for their platform
+	if err := s.queries.ReassignTaskProxyLists(r.Context()); err != nil {
+		log.Printf("failed to reassign task proxy lists: %v", err)
+	}
+	s.proxyRegistry.BumpConfig()
+
 	http.Redirect(w, r, "/proxies", http.StatusSeeOther)
 }
 
@@ -669,8 +675,15 @@ func (s *Server) handleUpdateProxyList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Bump proxy version so running tasks pick up changes
+	// Bump proxy version so running tasks pick up proxy changes
 	s.proxyRegistry.Bump(int32(id))
+
+	// Reassign tasks to the correct proxy list for their platform and signal
+	// running tasks to re-resolve their proxy list assignment.
+	if err := s.queries.ReassignTaskProxyLists(r.Context()); err != nil {
+		log.Printf("failed to reassign task proxy lists: %v", err)
+	}
+	s.proxyRegistry.BumpConfig()
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -691,6 +704,12 @@ func (s *Server) handleDeleteProxyList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Reassign tasks now that this proxy list is gone
+	if err := s.queries.ReassignTaskProxyLists(r.Context()); err != nil {
+		log.Printf("failed to reassign task proxy lists: %v", err)
+	}
+	s.proxyRegistry.BumpConfig()
 
 	w.WriteHeader(http.StatusOK)
 }

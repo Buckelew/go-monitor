@@ -25,16 +25,18 @@ type ScraperWithClient interface {
 }
 
 type SearchTask struct {
-	id           int32
-	url          string
-	scraper      Scraper
-	isEnabled    bool
-	queries      *database.Queries
-	proxyListID  sql.NullInt32
-	registry     *httpclient.ProxyRegistry
-	proxyVersion int64
-	passwordPage bool
-	seenSuccess  bool // true after first successful (non-password) fetch
+	id            int32
+	url           string
+	platform      Platform
+	scraper       Scraper
+	isEnabled     bool
+	queries       *database.Queries
+	proxyListID   sql.NullInt32
+	registry      *httpclient.ProxyRegistry
+	proxyVersion  int64
+	configVersion int64 // last-seen registry config version
+	passwordPage  bool
+	seenSuccess   bool // true after first successful (non-password) fetch
 }
 
 func (s *SearchTask) ID() int32          { return s.id }
@@ -206,7 +208,17 @@ func (s *SearchTask) insertEvent(ctx context.Context, itemID int32, prevState, n
 }
 
 func (s *SearchTask) maybeRefreshProxies(ctx context.Context) {
-	if s.registry == nil || !s.proxyListID.Valid {
+	if s.registry == nil {
+		return
+	}
+
+	// Check if platform→proxy-list mapping changed (proxy page edit).
+	if cv := s.registry.ConfigVersion(); cv != s.configVersion {
+		s.configVersion = cv
+		s.reassignProxyList(ctx)
+	}
+
+	if !s.proxyListID.Valid {
 		return
 	}
 
@@ -243,6 +255,33 @@ func (s *SearchTask) maybeRefreshProxies(ctx context.Context) {
 
 	s.proxyVersion = currentVersion
 	log.Printf("[task %d] proxies refreshed (version %d)", s.id, currentVersion)
+}
+
+// reassignProxyList re-resolves this task's proxy list from the
+// platform→proxy-list mapping. Called when the global config version changes.
+func (s *SearchTask) reassignProxyList(ctx context.Context) {
+	proxyList, err := s.queries.GetProxyListByPlatform(ctx, string(s.platform))
+	if err != nil {
+		// No proxy list for this platform — go direct.
+		if s.proxyListID.Valid {
+			log.Printf("[task %d] proxy list removed for %s, switching to direct", s.id, s.platform)
+			s.proxyListID = sql.NullInt32{}
+			s.proxyVersion = 0
+			if swc, ok := s.scraper.(ScraperWithClient); ok {
+				swc.Client().SetRotator(nil)
+			}
+		}
+		return
+	}
+
+	newID := sql.NullInt32{Int32: proxyList.ID, Valid: true}
+	if s.proxyListID == newID {
+		return
+	}
+
+	log.Printf("[task %d] proxy list changed: %v → %d", s.id, s.proxyListID, proxyList.ID)
+	s.proxyListID = newID
+	s.proxyVersion = 0 // force proxy refresh on next check
 }
 
 // extractItemInfo extracts title and image URL from stored item data JSON.
@@ -293,6 +332,7 @@ func NewSearchTask(queries database.Queries, scraper Scraper, task database.Task
 	return &SearchTask{
 		id:          task.ID,
 		url:         task.Url,
+		platform:    Platform(task.Platform),
 		scraper:     scraper,
 		isEnabled:   task.Enabled,
 		queries:     &queries,

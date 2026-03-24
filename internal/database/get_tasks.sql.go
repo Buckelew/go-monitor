@@ -228,6 +228,22 @@ func (q *Queries) GetTasksWithStats(ctx context.Context, arg GetTasksWithStatsPa
 	return items, nil
 }
 
+const reassignTaskProxyLists = `-- name: ReassignTaskProxyLists :exec
+UPDATE tasks t
+SET proxy_list_id = (
+    SELECT plp.proxy_list_id
+    FROM proxy_list_platforms plp
+    WHERE plp.platform = t.platform
+    LIMIT 1
+)
+WHERE t.enabled = true
+`
+
+func (q *Queries) ReassignTaskProxyLists(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, reassignTaskProxyLists)
+	return err
+}
+
 const updateTaskEnabled = `-- name: UpdateTaskEnabled :exec
 UPDATE tasks SET enabled = $2, updated_at = NOW() WHERE id = $1
 `

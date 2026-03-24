@@ -48,3 +48,13 @@ SELECT * FROM tasks WHERE url = $1;
 
 -- name: CountTasksByPlatform :one
 SELECT COUNT(*) FROM tasks WHERE platform = $1 AND enabled = true;
+
+-- name: ReassignTaskProxyLists :exec
+UPDATE tasks t
+SET proxy_list_id = (
+    SELECT plp.proxy_list_id
+    FROM proxy_list_platforms plp
+    WHERE plp.platform = t.platform
+    LIMIT 1
+)
+WHERE t.enabled = true;

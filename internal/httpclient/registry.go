@@ -6,9 +6,10 @@ import "sync"
 // know when to rebuild their HTTP clients. Call Bump when proxies are updated;
 // consumers compare their last-seen version via Version.
 type ProxyRegistry struct {
-	mu       sync.RWMutex
-	versions map[int32]int64
-	rotators map[int32]*ProxyRotator
+	mu            sync.RWMutex
+	versions      map[int32]int64
+	rotators      map[int32]*ProxyRotator
+	configVersion int64 // bumped when platform→proxy-list assignments change
 }
 
 func NewProxyRegistry() *ProxyRegistry {
@@ -46,4 +47,20 @@ func (r *ProxyRegistry) GetOrSetRotator(proxyListID int32, rotator *ProxyRotator
 	}
 	r.rotators[proxyListID] = rotator
 	return rotator
+}
+
+// BumpConfig increments the global config version, signaling tasks to
+// re-resolve their proxy list assignment by platform.
+func (r *ProxyRegistry) BumpConfig() {
+	r.mu.Lock()
+	r.configVersion++
+	r.mu.Unlock()
+}
+
+// ConfigVersion returns the current global config version.
+func (r *ProxyRegistry) ConfigVersion() int64 {
+	r.mu.RLock()
+	v := r.configVersion
+	r.mu.RUnlock()
+	return v
 }
