@@ -1,11 +1,12 @@
 package bigcartel
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
 	"strings"
+
+	json "github.com/goccy/go-json"
 
 	"github.com/buckelew/go-monitor/internal/monitor"
 )

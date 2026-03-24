@@ -1,10 +1,11 @@
 package squarespace
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
+
+	json "github.com/goccy/go-json"
 
 	"github.com/buckelew/go-monitor/internal/monitor"
 )
@@ -25,15 +26,15 @@ type parseResult struct {
 }
 
 // parseItems stream-parses the Squarespace JSON from r, extracting both items
-// and pagination in a single pass. This eliminates the previous double-unmarshal
-// (parseItems + hasNextPage) and avoids buffering the full response body.
+// and pagination in a single pass. Each item is decoded once into squarespaceItem
+// and marshalled back for Item.Data (no double-parse via RawMessage).
 func parseItems(r io.Reader, baseURL string) (*parseResult, error) {
 	dec := json.NewDecoder(r)
 
 	// Expect opening {
 	if t, err := dec.Token(); err != nil {
 		return nil, err
-	} else if t != json.Delim('{') {
+	} else if delim, ok := t.(json.Delim); !ok || delim != '{' {
 		return nil, fmt.Errorf("expected {, got %v", t)
 	}
 
@@ -50,18 +51,13 @@ func parseItems(r io.Reader, baseURL string) (*parseResult, error) {
 			// Stream the items array
 			if t, err := dec.Token(); err != nil {
 				return nil, err
-			} else if t != json.Delim('[') {
+			} else if delim, ok := t.(json.Delim); !ok || delim != '[' {
 				return nil, fmt.Errorf("expected [, got %v", t)
 			}
 
 			for dec.More() {
-				var raw json.RawMessage
-				if err := dec.Decode(&raw); err != nil {
-					return nil, err
-				}
-
 				var si squarespaceItem
-				if err := json.Unmarshal(raw, &si); err != nil {
+				if err := dec.Decode(&si); err != nil {
 					return nil, err
 				}
 
@@ -80,12 +76,17 @@ func parseItems(r io.Reader, baseURL string) (*parseResult, error) {
 					itemURL = fmt.Sprintf("%s/%s", strings.TrimRight(baseURL, "/"), si.URLId)
 				}
 
+				data, err := json.Marshal(si)
+				if err != nil {
+					return nil, err
+				}
+
 				result.items = append(result.items, monitor.Item{
 					URL:      itemURL,
 					Title:    si.Title,
 					InStock:  inStock,
 					ImageURL: si.AssetURL,
-					Data:     raw,
+					Data:     data,
 				})
 			}
 

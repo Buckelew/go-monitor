@@ -173,8 +173,8 @@ func (r *platformRunner) run(ctx context.Context) {
 		pc = 1
 	}
 	maxConcurrent := int64(len(r.tasks))
-	if maxConcurrent > 10 {
-		maxConcurrent = 10
+	if maxConcurrent > 25 {
+		maxConcurrent = 25
 	}
 	if pc > maxConcurrent {
 		pc = maxConcurrent

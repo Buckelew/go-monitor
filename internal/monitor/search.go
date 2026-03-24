@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log"
 
+	gojson "github.com/goccy/go-json"
+
 	"github.com/buckelew/go-monitor/internal/database"
 	"github.com/buckelew/go-monitor/internal/httpclient"
 )
@@ -301,7 +303,7 @@ func extractItemInfo(data json.RawMessage) (title, imageURL string) {
 			SecureURL string `json:"secure_url"`
 		} `json:"images"`
 	}
-	if json.Unmarshal(data, &d) != nil {
+	if gojson.Unmarshal(data, &d) != nil {
 		return "", ""
 	}
 

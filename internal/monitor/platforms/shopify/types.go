@@ -1,8 +1,9 @@
 package shopify
 
 import (
-	"encoding/json"
 	"time"
+
+	json "github.com/goccy/go-json"
 )
 
 type shopifyProduct struct {
