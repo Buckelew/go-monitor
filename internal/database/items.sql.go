@@ -223,22 +223,6 @@ func (q *Queries) UpdateItemData(ctx context.Context, arg UpdateItemDataParams) 
 	return err
 }
 
-const updateItemDataIfChanged = `-- name: UpdateItemDataIfChanged :exec
-UPDATE items
-SET data = $2
-WHERE id = $1 AND data != $2
-`
-
-type UpdateItemDataIfChangedParams struct {
-	ID   int32           `json:"id"`
-	Data json.RawMessage `json:"data"`
-}
-
-func (q *Queries) UpdateItemDataIfChanged(ctx context.Context, arg UpdateItemDataIfChangedParams) error {
-	_, err := q.db.ExecContext(ctx, updateItemDataIfChanged, arg.ID, arg.Data)
-	return err
-}
-
 const updateItemInStock = `-- name: UpdateItemInStock :exec
 UPDATE items
 SET in_stock = $2

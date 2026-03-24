@@ -14,28 +14,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMemoryBaseline_GetCompletedTaskRuns directly measures the allocation cost
-// of GetCompletedTaskRuns — the query called by isFirstRun every task cycle.
-//
-// With the bug: SELECT * FROM task_runs WHERE status='completed' AND task_id=$1
-// loads ALL rows into Go structs. Each TaskRun is ~200 bytes, so 10K rows = ~2MB
-// allocated per cycle, scaling linearly with uptime.
-func TestMemoryBaseline_GetCompletedTaskRuns(t *testing.T) {
+// TestMemoryBaseline_HasItemsByTask measures the HasItemsByTask query used by
+// isFirstRun. Should be O(1) regardless of item count.
+func TestMemoryBaseline_HasItemsByTask(t *testing.T) {
 	if testDB == nil {
 		t.Skip("POSTGRES_TEST_URL not set")
 	}
 
-	for _, count := range []int{100, 1_000, 10_000, 50_000} {
-		t.Run(fmt.Sprintf("rows=%d", count), func(t *testing.T) {
+	for _, count := range []int{100, 1_000, 10_000} {
+		t.Run(fmt.Sprintf("items=%d", count), func(t *testing.T) {
 			truncateTables(t)
 			ctx := context.Background()
 			queries := database.New(testDB)
 
 			task := createTestTask(t, "shopify", "http://example.com")
-			seedTaskRuns(t, task.ID, count)
+			seedItems(t, task.ID, count)
 
 			// Warm up
-			queries.GetCompletedTaskRuns(ctx, task.ID)
+			queries.HasItemsByTask(ctx, task.ID)
 
 			// Measure
 			runtime.GC()
@@ -44,51 +40,7 @@ func TestMemoryBaseline_GetCompletedTaskRuns(t *testing.T) {
 
 			const iterations = 20
 			for range iterations {
-				rows, err := queries.GetCompletedTaskRuns(ctx, task.ID)
-				require.NoError(t, err)
-				_ = len(rows)
-			}
-
-			runtime.GC()
-			var after runtime.MemStats
-			runtime.ReadMemStats(&after)
-
-			totalAlloc := after.TotalAlloc - before.TotalAlloc
-			perIter := totalAlloc / iterations
-
-			t.Logf("rows=%d: %d KB/iter (%d KB total over %d calls)",
-				count, perIter/1024, totalAlloc/1024, iterations)
-		})
-	}
-}
-
-// TestMemoryFixed_HasCompletedTaskRun measures the replacement query: EXISTS
-// with LIMIT 1. Should be O(1) regardless of row count.
-func TestMemoryFixed_HasCompletedTaskRun(t *testing.T) {
-	if testDB == nil {
-		t.Skip("POSTGRES_TEST_URL not set")
-	}
-
-	for _, count := range []int{100, 1_000, 10_000, 50_000} {
-		t.Run(fmt.Sprintf("rows=%d", count), func(t *testing.T) {
-			truncateTables(t)
-			ctx := context.Background()
-			queries := database.New(testDB)
-
-			task := createTestTask(t, "shopify", "http://example.com")
-			seedTaskRuns(t, task.ID, count)
-
-			// Warm up
-			queries.HasCompletedTaskRun(ctx, task.ID)
-
-			// Measure
-			runtime.GC()
-			var before runtime.MemStats
-			runtime.ReadMemStats(&before)
-
-			const iterations = 20
-			for range iterations {
-				exists, err := queries.HasCompletedTaskRun(ctx, task.ID)
+				exists, err := queries.HasItemsByTask(ctx, task.ID)
 				require.NoError(t, err)
 				_ = exists
 			}
@@ -100,7 +52,7 @@ func TestMemoryFixed_HasCompletedTaskRun(t *testing.T) {
 			totalAlloc := after.TotalAlloc - before.TotalAlloc
 			perIter := totalAlloc / iterations
 
-			t.Logf("rows=%d: %d KB/iter (%d KB total over %d calls)",
+			t.Logf("items=%d: %d KB/iter (%d KB total over %d calls)",
 				count, perIter/1024, totalAlloc/1024, iterations)
 		})
 	}
@@ -145,8 +97,7 @@ func TestMemoryBaseline_FullCycle(t *testing.T) {
 			// Warm up
 			runSchedulerOnce(t, searchTask, queries, notifier)
 
-			// Measure: run 5 scheduler cycles, each calls executeTask which
-			// calls isFirstRun → GetCompletedTaskRuns
+			// Measure: run 5 scheduler cycles
 			runtime.GC()
 			var before runtime.MemStats
 			runtime.ReadMemStats(&before)
@@ -181,6 +132,20 @@ func seedTaskRuns(tb testing.TB, taskID int32, count int) {
 		_, err := testDB.Exec(query, taskID, batch)
 		if err != nil {
 			tb.Fatalf("seed task_runs: %v", err)
+		}
+	}
+}
+
+func seedItems(tb testing.TB, taskID int32, count int) {
+	tb.Helper()
+	for i := 0; i < count; i += 1000 {
+		batch := min(count-i, 1000)
+		query := `INSERT INTO items (task_id, url, platform, data, in_stock)
+			SELECT $1, 'http://example.com/product/' || n, 'shopify', '{}', true
+			FROM generate_series($2::int, $3::int) AS n`
+		_, err := testDB.Exec(query, taskID, i+1, i+batch)
+		if err != nil {
+			tb.Fatalf("seed items: %v", err)
 		}
 	}
 }

@@ -24,11 +24,6 @@ UPDATE items
 SET data = $2
 WHERE id = $1;
 
--- name: UpdateItemDataIfChanged :exec
-UPDATE items
-SET data = $2
-WHERE id = $1 AND data != $2;
-
 -- name: MarkItemDelisted :exec
 UPDATE items
 SET delisted = true

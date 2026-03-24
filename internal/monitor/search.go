@@ -116,6 +116,11 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			continue
 		}
 
+		// Track whether we need to persist the new data for this item.
+		// Only update when something meaningful changed (event or stock change),
+		// avoiding expensive per-item JSONB writes on every cycle.
+		needsDataUpdate := false
+
 		// Un-delist if it was previously delisted (product reappeared)
 		if existing.Delisted {
 			if err := s.queries.UndelistItem(ctx, existing.ID); err != nil {
@@ -124,6 +129,7 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			prevData := s.getItemData(ctx, existing.ID)
 			events = append(events, ItemEvent{Type: EventRestock, Item: item, ItemID: existing.ID})
 			s.insertEvent(ctx, existing.ID, prevData, item.Data)
+			needsDataUpdate = true
 		}
 
 		// Check for restock (OOS → IS)
@@ -131,15 +137,8 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			prevData := s.getItemData(ctx, existing.ID)
 			events = append(events, ItemEvent{Type: EventRestock, Item: item, ItemID: existing.ID})
 			s.insertEvent(ctx, existing.ID, prevData, item.Data)
+			needsDataUpdate = true
 		}
-
-		// Update data unconditionally — let the DB skip if unchanged via
-		// the WHERE clause. Avoids fetching existing Data into Go memory
-		// just to compare (~15KB per item × 1000+ items = major allocation).
-		s.queries.UpdateItemDataIfChanged(ctx, database.UpdateItemDataIfChangedParams{
-			ID:   existing.ID,
-			Data: item.Data,
-		})
 
 		// Update in_stock if changed
 		if existing.InStock != item.InStock {
@@ -149,6 +148,16 @@ func (s *SearchTask) Run(ctx context.Context) (*TaskResult, error) {
 			}); err != nil {
 				log.Printf("[task %d] failed to update in_stock for %s: %v", s.id, item.URL, err)
 			}
+			needsDataUpdate = true
+		}
+
+		// Only write data to DB when something changed — eliminates thousands
+		// of expensive JSONB writes per cycle for unchanged items.
+		if needsDataUpdate {
+			s.queries.UpdateItemData(ctx, database.UpdateItemDataParams{
+				ID:   existing.ID,
+				Data: item.Data,
+			})
 		}
 
 		fetched.Items[i].Data = nil

@@ -56,6 +56,9 @@ func (s *Scheduler) Start(ctx context.Context, initialTasks []Task) {
 	}
 	s.mu.Unlock()
 
+	// Retention: delete task_runs older than 3 days, every hour.
+	go s.runRetention(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -251,27 +254,21 @@ func (r *platformRunner) nextEligible() Task {
 }
 
 func (r *platformRunner) executeTask(ctx context.Context, task Task) {
-	taskRun, err := r.queries.InsertTaskRun(ctx, task.ID())
-	if err != nil {
-		log.Printf("[task %d] failed to insert task run: %v", task.ID(), err)
-		return
-	}
-
 	isFirst, err := r.isFirstRun(ctx, task.ID())
 	if err != nil {
 		log.Printf("[task %d] failed to check first run: %v", task.ID(), err)
-		r.completeTaskRun(ctx, taskRun.ID, "error", err.Error(), nil)
 		return
 	}
 
+	startedAt := time.Now()
 	result, err := task.Run(ctx)
 	if err != nil {
 		log.Printf("[task %d] run failed: %v", task.ID(), err)
-		r.completeTaskRun(ctx, taskRun.ID, "error", err.Error(), nil)
+		r.insertTaskRun(ctx, task.ID(), startedAt, "error", err.Error(), nil)
 		return
 	}
 
-	r.completeTaskRun(ctx, taskRun.ID, "completed", "", result.Meta)
+	r.insertTaskRun(ctx, task.ID(), startedAt, "completed", "", result.Meta)
 
 	if !isFirst && len(result.Events) > 0 {
 		for _, event := range result.Events {
@@ -281,10 +278,11 @@ func (r *platformRunner) executeTask(ctx context.Context, task Task) {
 	}
 }
 
-func (r *platformRunner) completeTaskRun(ctx context.Context, runID int32, status string, errMsg string, meta *FetchMeta) {
-	params := database.CompleteTaskRunParams{
-		ID:     runID,
-		Status: status,
+func (r *platformRunner) insertTaskRun(ctx context.Context, taskID int32, startedAt time.Time, status string, errMsg string, meta *FetchMeta) {
+	params := database.InsertCompletedTaskRunParams{
+		TaskID:    taskID,
+		StartedAt: startedAt,
+		Status:    status,
 	}
 	if errMsg != "" {
 		params.ErrorMessage = sql.NullString{String: errMsg, Valid: true}
@@ -296,8 +294,8 @@ func (r *platformRunner) completeTaskRun(ctx context.Context, runID int32, statu
 			params.CacheStatus = sql.NullString{String: meta.CacheStatus, Valid: true}
 		}
 	}
-	if err := r.queries.CompleteTaskRun(ctx, params); err != nil {
-		log.Printf("[run %d] failed to complete task run: %v", runID, err)
+	if err := r.queries.InsertCompletedTaskRun(ctx, params); err != nil {
+		log.Printf("[task %d] failed to insert task run: %v", taskID, err)
 	}
 }
 
@@ -305,15 +303,61 @@ func (r *platformRunner) isFirstRun(ctx context.Context, taskID int32) (bool, er
 	if r.notFirst[taskID] {
 		return false, nil
 	}
-	exists, err := r.queries.HasCompletedTaskRun(ctx, taskID)
+	hasItems, err := r.queries.HasItemsByTask(ctx, taskID)
 	if err != nil {
 		return false, err
 	}
-	if exists {
+	if hasItems {
 		r.notFirst[taskID] = true
 		return false, nil
 	}
 	return true, nil
+}
+
+const (
+	retentionInterval = 1 * time.Hour
+	retentionAge      = 3 * 24 * time.Hour // keep 3 days of task_runs
+	retentionBatch    = 1000
+)
+
+// runRetention periodically deletes task_runs older than retentionAge.
+func (s *Scheduler) runRetention(ctx context.Context) {
+	ticker := time.NewTicker(retentionInterval)
+	defer ticker.Stop()
+
+	// Run once at startup to clean up existing backlog.
+	s.deleteOldTaskRuns(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.deleteOldTaskRuns(ctx)
+		}
+	}
+}
+
+func (s *Scheduler) deleteOldTaskRuns(ctx context.Context) {
+	cutoff := time.Now().Add(-retentionAge)
+	var total int64
+	for {
+		deleted, err := s.queries.DeleteTaskRunsBefore(ctx, database.DeleteTaskRunsBeforeParams{
+			CompletedAt: sql.NullTime{Time: cutoff, Valid: true},
+			Limit:       retentionBatch,
+		})
+		if err != nil {
+			log.Printf("[retention] failed to delete old task runs: %v", err)
+			return
+		}
+		total += deleted
+		if deleted < retentionBatch {
+			break
+		}
+	}
+	if total > 0 {
+		log.Printf("[retention] deleted %d task runs older than %v", total, retentionAge)
+	}
 }
 
 // ShouldNotify determines whether a subscription should receive a given event.

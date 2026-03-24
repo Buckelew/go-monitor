@@ -8,17 +8,37 @@ package database
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
-const completeTaskRun = `-- name: CompleteTaskRun :exec
-UPDATE task_runs
-SET status = $2, completed_at = NOW(), error_message = $3,
-    status_code = $4, response_time_ms = $5, cache_status = $6
-WHERE id = $1
+const deleteTaskRunsBefore = `-- name: DeleteTaskRunsBefore :execrows
+DELETE FROM task_runs
+WHERE id IN (
+  SELECT tr.id FROM task_runs tr WHERE tr.completed_at < $1 LIMIT $2
+)
 `
 
-type CompleteTaskRunParams struct {
-	ID             int32          `json:"id"`
+type DeleteTaskRunsBeforeParams struct {
+	CompletedAt sql.NullTime `json:"completed_at"`
+	Limit       int32        `json:"limit"`
+}
+
+func (q *Queries) DeleteTaskRunsBefore(ctx context.Context, arg DeleteTaskRunsBeforeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteTaskRunsBefore, arg.CompletedAt, arg.Limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const insertCompletedTaskRun = `-- name: InsertCompletedTaskRun :exec
+INSERT INTO task_runs (task_id, started_at, completed_at, status, error_message, status_code, response_time_ms, cache_status)
+VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7)
+`
+
+type InsertCompletedTaskRunParams struct {
+	TaskID         int32          `json:"task_id"`
+	StartedAt      time.Time      `json:"started_at"`
 	Status         string         `json:"status"`
 	ErrorMessage   sql.NullString `json:"error_message"`
 	StatusCode     sql.NullInt16  `json:"status_code"`
@@ -26,9 +46,10 @@ type CompleteTaskRunParams struct {
 	CacheStatus    sql.NullString `json:"cache_status"`
 }
 
-func (q *Queries) CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams) error {
-	_, err := q.db.ExecContext(ctx, completeTaskRun,
-		arg.ID,
+func (q *Queries) InsertCompletedTaskRun(ctx context.Context, arg InsertCompletedTaskRunParams) error {
+	_, err := q.db.ExecContext(ctx, insertCompletedTaskRun,
+		arg.TaskID,
+		arg.StartedAt,
 		arg.Status,
 		arg.ErrorMessage,
 		arg.StatusCode,
@@ -36,27 +57,4 @@ func (q *Queries) CompleteTaskRun(ctx context.Context, arg CompleteTaskRunParams
 		arg.CacheStatus,
 	)
 	return err
-}
-
-const insertTaskRun = `-- name: InsertTaskRun :one
-INSERT INTO task_runs (task_id, started_at, status)
-VALUES ($1, NOW(), 'running')
-RETURNING id, task_id, started_at, completed_at, status, error_message, status_code, response_time_ms, cache_status
-`
-
-func (q *Queries) InsertTaskRun(ctx context.Context, taskID int32) (TaskRun, error) {
-	row := q.db.QueryRowContext(ctx, insertTaskRun, taskID)
-	var i TaskRun
-	err := row.Scan(
-		&i.ID,
-		&i.TaskID,
-		&i.StartedAt,
-		&i.CompletedAt,
-		&i.Status,
-		&i.ErrorMessage,
-		&i.StatusCode,
-		&i.ResponseTimeMs,
-		&i.CacheStatus,
-	)
-	return i, err
 }

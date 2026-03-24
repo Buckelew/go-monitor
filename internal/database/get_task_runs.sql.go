@@ -11,44 +11,6 @@ import (
 	"time"
 )
 
-const getCompletedTaskRuns = `-- name: GetCompletedTaskRuns :many
-SELECT id, task_id, started_at, completed_at, status, error_message, status_code, response_time_ms, cache_status FROM task_runs
-WHERE status = 'completed' AND task_id = $1
-`
-
-func (q *Queries) GetCompletedTaskRuns(ctx context.Context, taskID int32) ([]TaskRun, error) {
-	rows, err := q.db.QueryContext(ctx, getCompletedTaskRuns, taskID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []TaskRun
-	for rows.Next() {
-		var i TaskRun
-		if err := rows.Scan(
-			&i.ID,
-			&i.TaskID,
-			&i.StartedAt,
-			&i.CompletedAt,
-			&i.Status,
-			&i.ErrorMessage,
-			&i.StatusCode,
-			&i.ResponseTimeMs,
-			&i.CacheStatus,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getRecentTaskRuns = `-- name: GetRecentTaskRuns :many
 SELECT
   tr.id, tr.started_at, tr.completed_at, tr.status, tr.error_message,
@@ -131,17 +93,15 @@ func (q *Queries) GetRecentTaskRuns(ctx context.Context, arg GetRecentTaskRunsPa
 	return items, nil
 }
 
-const hasCompletedTaskRun = `-- name: HasCompletedTaskRun :one
+const hasItemsByTask = `-- name: HasItemsByTask :one
 SELECT EXISTS(
-  SELECT 1 FROM task_runs
-  WHERE status = 'completed' AND task_id = $1
-  LIMIT 1
-) AS has_run
+  SELECT 1 FROM items WHERE task_id = $1 LIMIT 1
+) AS has_items
 `
 
-func (q *Queries) HasCompletedTaskRun(ctx context.Context, taskID int32) (bool, error) {
-	row := q.db.QueryRowContext(ctx, hasCompletedTaskRun, taskID)
-	var has_run bool
-	err := row.Scan(&has_run)
-	return has_run, err
+func (q *Queries) HasItemsByTask(ctx context.Context, taskID int32) (bool, error) {
+	row := q.db.QueryRowContext(ctx, hasItemsByTask, taskID)
+	var has_items bool
+	err := row.Scan(&has_items)
+	return has_items, err
 }

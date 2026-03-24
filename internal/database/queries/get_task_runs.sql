@@ -1,13 +1,7 @@
--- name: GetCompletedTaskRuns :many
-SELECT * FROM task_runs
-WHERE status = 'completed' AND task_id = $1;
-
--- name: HasCompletedTaskRun :one
+-- name: HasItemsByTask :one
 SELECT EXISTS(
-  SELECT 1 FROM task_runs
-  WHERE status = 'completed' AND task_id = $1
-  LIMIT 1
-) AS has_run;
+  SELECT 1 FROM items WHERE task_id = $1 LIMIT 1
+) AS has_items;
 
 -- name: GetRecentTaskRuns :many
 SELECT

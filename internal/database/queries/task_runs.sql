@@ -1,10 +1,9 @@
--- name: InsertTaskRun :one
-INSERT INTO task_runs (task_id, started_at, status)
-VALUES ($1, NOW(), 'running')
-RETURNING *;
+-- name: InsertCompletedTaskRun :exec
+INSERT INTO task_runs (task_id, started_at, completed_at, status, error_message, status_code, response_time_ms, cache_status)
+VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7);
 
--- name: CompleteTaskRun :exec
-UPDATE task_runs
-SET status = $2, completed_at = NOW(), error_message = $3,
-    status_code = $4, response_time_ms = $5, cache_status = $6
-WHERE id = $1;
+-- name: DeleteTaskRunsBefore :execrows
+DELETE FROM task_runs
+WHERE id IN (
+  SELECT tr.id FROM task_runs tr WHERE tr.completed_at < $1 LIMIT $2
+);
