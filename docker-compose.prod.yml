@@ -35,7 +35,7 @@ services:
       - "127.0.0.1:8081:8080"
       - "127.0.0.1:6060:6060"
     environment:
-      GOMEMLIMIT: 700MiB
+      GOMEMLIMIT: 550MiB
       LOG_LEVEL: info
       ENV: production
       POSTGRES_HOST: db
