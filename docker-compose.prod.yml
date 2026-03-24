@@ -26,7 +26,7 @@ services:
   app:
     image: ghcr.io/buckelew/go-monitor:latest
     restart: unless-stopped
-    mem_limit: 1g
+    mem_limit: 1536m
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -35,7 +35,7 @@ services:
       - "127.0.0.1:8081:8080"
       - "127.0.0.1:6060:6060"
     environment:
-      GOMEMLIMIT: 550MiB
+      GOMEMLIMIT: 1200MiB
       LOG_LEVEL: info
       ENV: production
       POSTGRES_HOST: db
