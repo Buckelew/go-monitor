@@ -14,7 +14,7 @@ import (
 const (
 	minTickInterval  = 100 * time.Millisecond // floor regardless of proxy count
 	defaultInterval  = 3 * time.Second        // when platform has 0 proxies
-	minCycleTime     = 5 * time.Second        // no task runs more often than this
+	minCycleTime     = 1 * time.Second        // no task runs more often than this
 	proxyRefreshFreq = 30 * time.Second       // how often to re-query proxy count
 )
 
