@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"time"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 type Platform string
@@ -100,4 +102,13 @@ func (cr *CountingReader) Read(p []byte) (int, error) {
 	n, err := cr.R.Read(p)
 	cr.N += n
 	return n, err
+}
+
+// NormalizeURL applies NFC Unicode normalization to a URL built from
+// external data (e.g. Shopify handle, BigCartel permalink). Without
+// this, the same product can appear with different byte sequences for
+// non-ASCII characters, creating duplicate items and delist/restock
+// flip-flop.
+func NormalizeURL(u string) string {
+	return norm.NFC.String(u)
 }

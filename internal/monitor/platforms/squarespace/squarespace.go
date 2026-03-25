@@ -82,7 +82,7 @@ func parseItems(r io.Reader, baseURL string) (*parseResult, error) {
 				}
 
 				result.items = append(result.items, monitor.Item{
-					URL:      itemURL,
+					URL:      monitor.NormalizeURL(itemURL),
 					Title:    si.Title,
 					InStock:  inStock,
 					ImageURL: si.AssetURL,

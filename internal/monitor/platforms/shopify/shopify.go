@@ -111,7 +111,7 @@ func parseItems(r io.Reader, baseURL string) ([]monitor.Item, error) {
 			}
 
 			items = append(items, monitor.Item{
-				URL:      fmt.Sprintf("%s/products/%s", baseURL, p.Handle),
+				URL:      monitor.NormalizeURL(fmt.Sprintf("%s/products/%s", baseURL, p.Handle)),
 				Title:    p.Title,
 				InStock:  inStock,
 				ImageURL: imageURL,

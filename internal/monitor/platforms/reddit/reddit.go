@@ -55,7 +55,7 @@ func parseItems(r io.Reader) ([]monitor.Item, error) {
 		}
 
 		items = append(items, monitor.Item{
-			URL:      "https://www.reddit.com" + post.Permalink,
+			URL:      monitor.NormalizeURL("https://www.reddit.com" + post.Permalink),
 			Title:    post.Title,
 			InStock:  true,
 			ImageURL: imageURL,
