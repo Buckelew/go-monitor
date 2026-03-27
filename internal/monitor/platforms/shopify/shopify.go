@@ -25,6 +25,7 @@ type slimProduct struct {
 }
 
 type slimVariant struct {
+	ID        int64  `json:"id"`
 	Title     string `json:"title"`
 	Available bool   `json:"available"`
 	Price     string `json:"price"`
@@ -93,6 +94,7 @@ func parseItems(r io.Reader, baseURL string) ([]monitor.Item, error) {
 			}
 			for _, v := range p.Variants {
 				slim.Variants = append(slim.Variants, slimVariant{
+					ID:        v.ID,
 					Title:     v.Title,
 					Available: v.Available,
 					Price:     v.Price,
@@ -111,7 +113,7 @@ func parseItems(r io.Reader, baseURL string) ([]monitor.Item, error) {
 			}
 
 			items = append(items, monitor.Item{
-				URL:      monitor.NormalizeURL(fmt.Sprintf("%s/products/%s", baseURL, p.Handle)),
+				URL:      fmt.Sprintf("%s/products/%s", baseURL, monitor.SanitizeSlug(p.Handle)),
 				Title:    p.Title,
 				InStock:  inStock,
 				ImageURL: imageURL,

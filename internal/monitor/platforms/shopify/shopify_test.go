@@ -10,24 +10,16 @@ import (
 	"github.com/buckelew/go-monitor/internal/monitor"
 )
 
-func TestParseItems_NormalizesUnicodeHandles(t *testing.T) {
-	// The ® character (U+00AE) can be encoded in UTF-8 as 0xC2 0xAE.
-	// When Shopify returns inconsistent encoding (e.g. double-encoded or
-	// mojibake), the same product gets two different URLs, causing
-	// delist/restock flip-flop. NFC normalization should produce a
-	// consistent URL regardless of which encoding variant arrives.
-
-	nfcHandle := "product-\u00AE-name"
-
+func TestParseItems_StripsNonASCIIFromHandles(t *testing.T) {
 	tests := []struct {
 		name    string
 		handle  string
 		wantURL string
 	}{
 		{
-			name:    "NFC handle normalizes consistently",
-			handle:  nfcHandle,
-			wantURL: "https://example.com/products/product-®-name",
+			name:    "registered mark stripped",
+			handle:  "product-\u00AE-name",
+			wantURL: "https://example.com/products/product--name",
 		},
 		{
 			name:    "plain ASCII handle unchanged",
@@ -35,9 +27,14 @@ func TestParseItems_NormalizesUnicodeHandles(t *testing.T) {
 			wantURL: "https://example.com/products/plain-product",
 		},
 		{
-			name:    "handle with emoji normalizes",
-			handle:  "cool-product-\U0001F525",
-			wantURL: "https://example.com/products/cool-product-\U0001F525",
+			name:    "trademark stripped",
+			handle:  "cool-product-\u2122",
+			wantURL: "https://example.com/products/cool-product-",
+		},
+		{
+			name:    "replacement chars stripped",
+			handle:  "product-\uFFFD\uFFFD-name",
+			wantURL: "https://example.com/products/product--name",
 		},
 	}
 
@@ -52,24 +49,51 @@ func TestParseItems_NormalizesUnicodeHandles(t *testing.T) {
 	}
 }
 
-func TestParseItems_DuplicateHandlesWithDifferentEncoding(t *testing.T) {
-	// Simulate what Shopify does: same product returned with different
-	// byte sequences for the handle. After normalization both should
-	// produce the exact same URL.
-	handle1 := "sig-mcx\u00ae-model"
-	handle2 := "sig-mcx\u00ae-model"
+func TestParseItems_MojibakeAndCleanHandleProduceSameURL(t *testing.T) {
+	// The real bug: Shopify sends ® (0xC2 0xAE) one request, then broken
+	// bytes the next that Go decodes as U+FFFD. After sanitization both
+	// must produce the same URL.
+	cleanHandle := "sig-mcx\u00ae-model"     // has ®
+	mojibakeHandle := "sig-mcx\uFFFD\uFFFD-model" // has ��
 
-	body := `{"products":[
-		{"title":"Product A","handle":"` + handle1 + `","variants":[{"available":true,"price":"1.00"}],"images":[]},
-		{"title":"Product B","handle":"` + handle2 + `","variants":[{"available":true,"price":"2.00"}],"images":[]}
-	]}`
+	body1 := `{"products":[{"title":"P","handle":"` + cleanHandle + `","variants":[{"available":true,"price":"1.00"}],"images":[]}]}`
+	body2 := `{"products":[{"title":"P","handle":"` + mojibakeHandle + `","variants":[{"available":true,"price":"1.00"}],"images":[]}]}`
 
-	items, err := parseItems(strings.NewReader(body), "https://store.com")
+	items1, err := parseItems(strings.NewReader(body1), "https://store.com")
 	require.NoError(t, err)
-	require.Len(t, items, 2)
+	items2, err := parseItems(strings.NewReader(body2), "https://store.com")
+	require.NoError(t, err)
 
-	assert.Equal(t, items[0].URL, items[1].URL,
-		"same handle with different encoding should produce identical URLs")
+	assert.Equal(t, items1[0].URL, items2[0].URL,
+		"clean ® and mojibake handles must produce identical URLs")
+}
+
+func TestParseItems_VariantIDInData(t *testing.T) {
+	body := `{"products":[{"title":"Test","handle":"test","variants":[{"id":12345,"available":true,"price":"9.99"}],"images":[]}]}`
+	items, err := parseItems(strings.NewReader(body), "https://example.com")
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Contains(t, string(items[0].Data), `"id":12345`)
+}
+
+func TestSanitizeSlug(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"ASCII passthrough", "plain-handle", "plain-handle"},
+		{"strips registered mark", "sig-mcx\u00AE-model", "sig-mcx-model"},
+		{"strips replacement chars", "sig-mcx\uFFFD\uFFFD-model", "sig-mcx-model"},
+		{"strips trademark", "product\u2122-name", "product-name"},
+		{"empty string", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, monitor.SanitizeSlug(tt.input))
+		})
+	}
 }
 
 func TestNormalizeURL(t *testing.T) {
@@ -79,7 +103,7 @@ func TestNormalizeURL(t *testing.T) {
 		want  string
 	}{
 		{"ASCII passthrough", "https://store.com/products/plain-handle", "https://store.com/products/plain-handle"},
-		{"NFC registered mark", "https://store.com/products/sig-mcx\u00AE-model", "https://store.com/products/sig-mcx\u00AE-model"},
+		{"NFC registered mark preserved", "https://store.com/products/sig-mcx\u00AE-model", "https://store.com/products/sig-mcx\u00AE-model"},
 		{"empty string", "", ""},
 		{"combining chars normalized to NFC", "https://store.com/products/caf\u0065\u0301", "https://store.com/products/caf\u00e9"},
 	}

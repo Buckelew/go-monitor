@@ -79,26 +79,61 @@ func BuildEmbed(event monitor.ItemEvent) *discordgo.MessageEmbed {
 			Value:  status,
 			Inline: true,
 		})
+
+		if link := atcURL(event.Item.URL, event.Item.Data); link != "" {
+			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+				Name:   "ATC",
+				Value:  fmt.Sprintf("[Add to Cart](%s)", link),
+				Inline: true,
+			})
+		}
 	}
 
 	return embed
 }
 
-// priceFromData extracts the first available price from item data JSON.
-// Currently only Shopify stores variant prices in the data column.
-func priceFromData(data json.RawMessage) string {
+// shopifyData holds the fields we need from the slim Shopify product JSON.
+type shopifyData struct {
+	Handle   string `json:"handle"`
+	Variants []struct {
+		ID        int64  `json:"id"`
+		Price     string `json:"price"`
+		Available bool   `json:"available"`
+	} `json:"variants"`
+}
+
+func parseShopifyData(data json.RawMessage) *shopifyData {
 	if len(data) == 0 {
-		return ""
+		return nil
 	}
-	var d struct {
-		Variants []struct {
-			Price string `json:"price"`
-		} `json:"variants"`
+	var d shopifyData
+	if json.Unmarshal(data, &d) != nil {
+		return nil
 	}
-	if json.Unmarshal(data, &d) == nil && len(d.Variants) > 0 && d.Variants[0].Price != "" {
+	return &d
+}
+
+// priceFromData extracts the first available price from item data JSON.
+func priceFromData(data json.RawMessage) string {
+	d := parseShopifyData(data)
+	if d != nil && len(d.Variants) > 0 && d.Variants[0].Price != "" {
 		return fmt.Sprintf("$%s", d.Variants[0].Price)
 	}
 	return ""
+}
+
+// atcURL builds a Shopify add-to-cart URL from the item data.
+// Returns empty string for non-Shopify items or missing variant IDs.
+func atcURL(itemURL string, data json.RawMessage) string {
+	d := parseShopifyData(data)
+	if d == nil || len(d.Variants) == 0 || d.Variants[0].ID == 0 {
+		return ""
+	}
+	u, err := url.Parse(itemURL)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%s://%s/cart/%d:1", u.Scheme, u.Host, d.Variants[0].ID)
 }
 
 func storeFromURL(rawURL string) string {

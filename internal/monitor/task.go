@@ -105,10 +105,29 @@ func (cr *CountingReader) Read(p []byte) (int, error) {
 }
 
 // NormalizeURL applies NFC Unicode normalization to a URL built from
-// external data (e.g. Shopify handle, BigCartel permalink). Without
-// this, the same product can appear with different byte sequences for
-// non-ASCII characters, creating duplicate items and delist/restock
-// flip-flop.
+// external data (e.g. Reddit permalink, Squarespace URL). Ensures
+// consistent encoding for URLs that legitimately contain non-ASCII.
 func NormalizeURL(u string) string {
 	return norm.NFC.String(u)
+}
+
+// SanitizeSlug strips non-ASCII bytes from a URL slug/handle.
+// Shopify and BigCartel handles are supposed to be ASCII URL slugs,
+// but some stores include ® or ™ which Shopify sometimes serves with
+// inconsistent encoding (valid UTF-8 one request, mojibake the next).
+// Stripping non-ASCII produces a stable key regardless of encoding.
+func SanitizeSlug(s string) string {
+	for i := 0; i < len(s); i++ {
+		if s[i] > 127 {
+			b := make([]byte, i, len(s))
+			copy(b, s[:i])
+			for ; i < len(s); i++ {
+				if s[i] <= 127 {
+					b = append(b, s[i])
+				}
+			}
+			return string(b)
+		}
+	}
+	return s
 }
