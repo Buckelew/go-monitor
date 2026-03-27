@@ -254,11 +254,7 @@ func (r *platformRunner) nextEligible() Task {
 }
 
 func (r *platformRunner) executeTask(ctx context.Context, task Task) {
-	isFirst, err := r.isFirstRun(ctx, task.ID())
-	if err != nil {
-		log.Printf("[task %d] failed to check first run: %v", task.ID(), err)
-		return
-	}
+	isFirst := r.isFirstRun(task.ID())
 
 	startedAt := time.Now()
 	result, err := task.Run(ctx)
@@ -269,6 +265,10 @@ func (r *platformRunner) executeTask(ctx context.Context, task Task) {
 	}
 
 	r.insertTaskRun(ctx, task.ID(), startedAt, "completed", "", result.Meta)
+
+	if isFirst {
+		r.notFirst[task.ID()] = true
+	}
 
 	if !isFirst && len(result.Events) > 0 {
 		for _, event := range result.Events {
@@ -299,19 +299,8 @@ func (r *platformRunner) insertTaskRun(ctx context.Context, taskID int32, starte
 	}
 }
 
-func (r *platformRunner) isFirstRun(ctx context.Context, taskID int32) (bool, error) {
-	if r.notFirst[taskID] {
-		return false, nil
-	}
-	hasItems, err := r.queries.HasItemsByTask(ctx, taskID)
-	if err != nil {
-		return false, err
-	}
-	if hasItems {
-		r.notFirst[taskID] = true
-		return false, nil
-	}
-	return true, nil
+func (r *platformRunner) isFirstRun(taskID int32) bool {
+	return !r.notFirst[taskID]
 }
 
 const (
