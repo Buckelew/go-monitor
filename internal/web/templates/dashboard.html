@@ -162,10 +162,18 @@ function detectPlatform(val) {
             .catch(() => { el.innerHTML = '<span style="color:#DC2626">Detection failed</span>'; setModeOptions(null); });
     }, 500);
 }
+function isLegoProductURL(val) {
+    val = val.trim();
+    if (/^\d+$/.test(val)) return false; // raw digits = Target TCIN, not LEGO
+    if (val.includes('lego.com') && val.includes('/product/')) return true;
+    return false;
+}
 function setModeOptions(platform) {
     const opts = document.querySelectorAll('.mode-option');
     const hint = document.querySelector('.mode-selector + .form-hint');
-    if (platform === 'target') {
+    const url = document.querySelector('input[name="url"]').value;
+    const restockOnly = platform === 'target' || (platform === 'lego' && isLegoProductURL(url));
+    if (restockOnly) {
         opts.forEach(o => {
             const radio = o.querySelector('input');
             if (radio.value === 'restock') {
@@ -176,7 +184,9 @@ function setModeOptions(platform) {
                 o.style.display = 'none';
             }
         });
-        if (hint) hint.textContent = 'Monitors TCIN for restocks via ATC';
+        if (hint) hint.textContent = platform === 'target'
+            ? 'Monitors TCIN for restocks via ATC'
+            : 'Monitors this product for restocks';
     } else {
         opts.forEach(o => {
             const radio = o.querySelector('input');
