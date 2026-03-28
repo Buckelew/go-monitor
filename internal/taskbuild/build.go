@@ -9,6 +9,7 @@ import (
 	"github.com/buckelew/go-monitor/internal/httpclient"
 	"github.com/buckelew/go-monitor/internal/monitor"
 	"github.com/buckelew/go-monitor/internal/monitor/platforms/bigcartel"
+	"github.com/buckelew/go-monitor/internal/monitor/platforms/lego"
 	"github.com/buckelew/go-monitor/internal/monitor/platforms/reddit"
 	"github.com/buckelew/go-monitor/internal/monitor/platforms/shopify"
 	"github.com/buckelew/go-monitor/internal/monitor/platforms/squarespace"
@@ -68,6 +69,10 @@ func BuildTask(ctx context.Context, queries *database.Queries, dbTask database.T
 	case string(monitor.Squarespace):
 		if dbTask.TaskType == string(monitor.Search) {
 			scraper = squarespace.NewSearchSquarespace(dbTask.Url, client)
+		}
+	case string(monitor.Lego):
+		if dbTask.TaskType == string(monitor.Search) {
+			scraper = lego.NewSearchLego(dbTask.Url, client)
 		}
 	case string(monitor.Reddit):
 		if dbTask.TaskType == string(monitor.Search) {

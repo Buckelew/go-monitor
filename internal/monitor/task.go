@@ -14,6 +14,7 @@ type Platform string
 
 const (
 	Bigcartel   Platform = "bigcartel"
+	Lego        Platform = "lego"
 	Reddit      Platform = "reddit"
 	Shopify     Platform = "shopify"
 	Squarespace Platform = "squarespace"

@@ -113,11 +113,23 @@ func parseShopifyData(data json.RawMessage) *shopifyData {
 	return &d
 }
 
-// priceFromData extracts the first available price from item data JSON.
+// priceFromData extracts price from item data JSON.
+// Supports Shopify (variants[].price) and LEGO (top-level price string).
 func priceFromData(data json.RawMessage) string {
+	if len(data) == 0 {
+		return ""
+	}
+	// Try Shopify format first.
 	d := parseShopifyData(data)
 	if d != nil && len(d.Variants) > 0 && d.Variants[0].Price != "" {
 		return fmt.Sprintf("$%s", d.Variants[0].Price)
+	}
+	// Try LEGO format (top-level "price" like "$89.99").
+	var generic struct {
+		Price string `json:"price"`
+	}
+	if json.Unmarshal(data, &generic) == nil && generic.Price != "" {
+		return generic.Price
 	}
 	return ""
 }

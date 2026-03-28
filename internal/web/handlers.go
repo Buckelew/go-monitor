@@ -52,7 +52,7 @@ func sortTasks(tasks []database.GetTasksWithStatsRow, col, dir string) {
 	})
 }
 
-var platforms = []string{"shopify", "bigcartel", "squarespace", "reddit"}
+var platforms = []string{"shopify", "bigcartel", "squarespace", "reddit", "lego"}
 
 func nullStr(s string) sql.NullString {
 	if s == "" {

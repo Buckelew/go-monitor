@@ -58,6 +58,8 @@ func detectByHostname(rawURL string) (Platform, error) {
 			return Reddit, nil
 		}
 		return "", fmt.Errorf("reddit URL must be a subreddit (/r/...)")
+	case host == "www.lego.com" || host == "lego.com":
+		return Lego, nil
 	case host == "www.target.com" || host == "target.com":
 		return Target, nil
 	default:
