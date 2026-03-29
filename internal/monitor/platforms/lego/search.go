@@ -57,7 +57,9 @@ func (s *SearchLego) fetchSingleProduct(ctx context.Context) (*monitor.FetchResu
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, productURL)
+		err := httpError(resp, productURL, s.client.CurrentProxyRaw())
+		resp.Body.Close()
+		return nil, err
 	}
 
 	cr := &monitor.CountingReader{R: resp.Body}
@@ -109,8 +111,9 @@ func (s *SearchLego) fetchCatalog(ctx context.Context) (*monitor.FetchResult, er
 		}
 
 		if resp.StatusCode != 200 {
+			err := httpError(resp, fmt.Sprintf("%s (page %d)", productsURL, page), s.client.CurrentProxyRaw())
 			resp.Body.Close()
-			return nil, fmt.Errorf("unexpected status %d from %s (page %d)", resp.StatusCode, productsURL, page)
+			return nil, err
 		}
 
 		cr := &monitor.CountingReader{R: resp.Body}
@@ -139,6 +142,32 @@ func (s *SearchLego) fetchCatalog(ctx context.Context) (*monitor.FetchResult, er
 		Items: allItems,
 		Meta:  monitor.FetchMeta{StatusCode: lastStatus, Duration: time.Since(start), BodySize: totalSize, Proxy: s.client.CurrentProxyRaw()},
 	}, nil
+}
+
+// httpError reads up to 512 bytes of the response body and includes the
+// proxy address for easier debugging of 403s and other failures.
+func httpError(resp *http.Response, endpoint string, proxy string) error {
+	body := make([]byte, 512)
+	n, _ := resp.Body.Read(body)
+	snippet := string(body[:n])
+
+	// Extract a useful hint from the body.
+	hint := ""
+	switch {
+	case strings.Contains(snippet, "Attention Required"):
+		hint = "cloudflare block"
+	case strings.Contains(snippet, "challenge-platform"):
+		hint = "cloudflare challenge"
+	case strings.Contains(snippet, "rate limit") || strings.Contains(snippet, "1015"):
+		hint = "rate limited"
+	case strings.Contains(snippet, "Bad Request"):
+		hint = "bad request"
+	}
+
+	if hint != "" {
+		return fmt.Errorf("status %d from %s (%s) [proxy: %s]", resp.StatusCode, endpoint, hint, proxy)
+	}
+	return fmt.Errorf("status %d from %s [proxy: %s]", resp.StatusCode, endpoint, proxy)
 }
 
 func setHeaders(req *http.Request) {
