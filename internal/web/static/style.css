@@ -45,6 +45,14 @@
     --reddit-bg: #FEF2F2;
     --reddit-border: #FECACA;
 
+    --target: #CC0000;
+    --target-bg: #FEF2F2;
+    --target-border: #FECACA;
+
+    --lego: #D01012;
+    --lego-bg: #FEF2F2;
+    --lego-border: #FECACA;
+
     --font-ui: 'Inter', system-ui, sans-serif;
     --font-heading: 'Space Grotesk', system-ui, sans-serif;
 
@@ -392,6 +400,18 @@ body {
     color: var(--reddit);
     background: var(--reddit-bg);
     border-color: var(--reddit-border);
+}
+
+.platform-target {
+    color: var(--target);
+    background: var(--target-bg);
+    border-color: var(--target-border);
+}
+
+.platform-lego {
+    color: var(--lego);
+    background: var(--lego-bg);
+    border-color: var(--lego-border);
 }
 
 /* ── Status Badge ────────────────────────────────────── */
