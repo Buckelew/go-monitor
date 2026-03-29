@@ -21,6 +21,9 @@ const (
 	Target      Platform = "target"
 )
 
+// AllPlatforms is the canonical list of supported platforms.
+var AllPlatforms = []Platform{Bigcartel, Lego, Reddit, Shopify, Squarespace, Target}
+
 type TaskType string
 
 const (

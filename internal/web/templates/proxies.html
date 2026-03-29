@@ -80,12 +80,9 @@
                 <div class="form-group">
                     <label class="form-label">Platforms</label>
                     <div class="checkbox-group">
-                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="shopify"> Shopify</label>
-                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="bigcartel"> Big Cartel</label>
-                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="squarespace"> Squarespace</label>
-                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="reddit"> Reddit</label>
-                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="target"> Target</label>
-                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="lego"> LEGO</label>
+                        {{range $.Platforms}}
+                        <label class="checkbox-label"><input type="checkbox" name="platforms" value="{{.}}"> {{.}}</label>
+                        {{end}}
                     </div>
                 </div>
                 <div class="form-group">
@@ -130,12 +127,9 @@
         <div class="form-group">
             <label class="form-label">Platforms</label>
             <div class="checkbox-group">
-                <label class="checkbox-label"><input type="checkbox" name="platforms" value="shopify" {{if index .PlatformSet "shopify"}}checked{{end}}> Shopify</label>
-                <label class="checkbox-label"><input type="checkbox" name="platforms" value="bigcartel" {{if index .PlatformSet "bigcartel"}}checked{{end}}> Big Cartel</label>
-                <label class="checkbox-label"><input type="checkbox" name="platforms" value="squarespace" {{if index .PlatformSet "squarespace"}}checked{{end}}> Squarespace</label>
-                <label class="checkbox-label"><input type="checkbox" name="platforms" value="reddit" {{if index .PlatformSet "reddit"}}checked{{end}}> Reddit</label>
-                <label class="checkbox-label"><input type="checkbox" name="platforms" value="target" {{if index .PlatformSet "target"}}checked{{end}}> Target</label>
-                <label class="checkbox-label"><input type="checkbox" name="platforms" value="lego" {{if index .PlatformSet "lego"}}checked{{end}}> LEGO</label>
+                {{range $.Platforms}}
+                <label class="checkbox-label"><input type="checkbox" name="platforms" value="{{.}}" {{if index $.PlatformSet (printf "%s" .)}}checked{{end}}> {{.}}</label>
+                {{end}}
             </div>
         </div>
         <div class="form-group">

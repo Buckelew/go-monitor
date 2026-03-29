@@ -52,7 +52,7 @@ func sortTasks(tasks []database.GetTasksWithStatsRow, col, dir string) {
 	})
 }
 
-var platforms = []string{"shopify", "bigcartel", "squarespace", "reddit", "lego"}
+var platforms = monitor.AllPlatforms
 
 func nullStr(s string) sql.NullString {
 	if s == "" {
@@ -487,6 +487,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 	user, _ := userFromContext(r.Context())
 	data := map[string]any{
 		"ProxyLists": views,
+		"Platforms":  platforms,
 		"ActivePage": "proxies",
 		"User":       user,
 		"IsAdmin":    user.Role == "admin",
@@ -605,6 +606,7 @@ func (s *Server) handleEditProxyListForm(w http.ResponseWriter, r *http.Request)
 
 	data := map[string]any{
 		"List":          list,
+		"Platforms":     platforms,
 		"ProxiesText":   strings.Join(lines, "\n"),
 		"PlatformSet":   platformSet,
 	}
