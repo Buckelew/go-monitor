@@ -79,7 +79,7 @@
     </td>
     <td class="cell-muted" data-sort-value="{{if .ResponseTimeMs.Valid}}{{.ResponseTimeMs.Int32}}{{else}}{{.DurationSeconds}}{{end}}">{{if .ResponseTimeMs.Valid}}{{.ResponseTimeMs.Int32}}ms{{else}}{{formatDuration .DurationSeconds}}{{end}}</td>
     <td class="cell-muted">{{if .CacheStatus.Valid}}{{.CacheStatus.String}}{{end}}</td>
-    <td class="cell-error">{{if .ErrorMessage.Valid}}{{.ErrorMessage.String}}{{end}}</td>
+    <td class="cell-error" onclick="this.classList.toggle('expanded')">{{if .ErrorMessage.Valid}}{{.ErrorMessage.String}}{{end}}</td>
 </tr>
 {{end}}
 {{if .NextCursor}}
